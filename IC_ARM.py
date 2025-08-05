@@ -70,6 +70,7 @@ class ICARM:
         for motor_name, motor in self.motors.items():
             try:
                 angle_rad = motor.getPosition()
+                print(angle_rad)
                 angle_deg = math.degrees(angle_rad)
                 angles[motor_name] = angle_rad
                 status = "OK"
@@ -351,6 +352,341 @@ class ICARM:
             # Disable motors for safety
             self.disable_all_motors()
             print("Position monitoring stopped.")
+    
+    def set_all_zero_positions(self):
+        """Set current positions of all motors as new zero positions
+        
+        This function should be called when the arm is in the desired zero position.
+        All motors will be disabled first, then their current positions will be set as zero.
+        """
+        print("Setting current positions as zero for all motors...")
+        print("WARNING: This will change the zero reference for all motors!")
+        
+        # Confirm with user
+        confirm = input("Are you sure you want to set current positions as zero? (y/N): ")
+        if confirm.lower() != 'y':
+            print("Operation cancelled.")
+            return False
+        
+        # First, read and display current positions
+        print("\nCurrent positions before setting zero:")
+        current_positions = self.get_positions_only()
+        for motor_name, pos_data in current_positions.items():
+            if pos_data['deg'] is not None:
+                print(f"{motor_name}: {pos_data['deg']:.2f}°")
+        
+        # Disable all motors first (required for setting zero position)
+        print("\nDisabling all motors...")
+        self.disable_all_motors()
+        
+        # Set zero position for each motor
+        success_count = 0
+        for motor_name, motor in self.motors.items():
+            try:
+                print(f"Setting zero position for {motor_name}...")
+                self.mc.set_zero_position(motor)
+                success_count += 1
+                print(f"✓ {motor_name} zero position set successfully")
+            except Exception as e:
+                print(f"✗ Failed to set zero position for {motor_name}: {e}")
+        
+        print(f"\nZero position setting completed: {success_count}/{len(self.motors)} motors successful")
+        
+        # Verify new positions (should be close to zero)
+        print("\nVerifying new zero positions:")
+        time.sleep(1)  # Wait a moment for the changes to take effect
+        new_positions = self.get_positions_only()
+        for motor_name, pos_data in new_positions.items():
+            if pos_data['deg'] is not None:
+                print(f"{motor_name}: {pos_data['deg']:.2f}°")
+        
+        return success_count == len(self.motors)
+    
+    def set_single_zero_position(self, motor_name):
+        """Set current position of a single motor as new zero position
+        
+        Args:
+            motor_name: Name of the motor (e.g., 'm1', 'm2', etc.)
+        """
+        if motor_name not in self.motors:
+            print(f"Error: Motor {motor_name} not found")
+            return False
+        
+        motor = self.motors[motor_name]
+        
+        print(f"Setting current position as zero for {motor_name}...")
+        
+        # Read current position
+        current_pos = self.get_positions_only()[motor_name]
+        if current_pos['deg'] is not None:
+            print(f"Current position: {current_pos['deg']:.2f}°")
+        
+        # Confirm with user
+        confirm = input(f"Set current position as zero for {motor_name}? (y/N): ")
+        if confirm.lower() != 'y':
+            print("Operation cancelled.")
+            return False
+        
+        # Disable motor first
+        print(f"Disabling {motor_name}...")
+        self.disable_motor(motor_name)
+        
+        try:
+            # Set zero position
+            self.mc.set_zero_position(motor)
+            print(f"✓ {motor_name} zero position set successfully")
+            
+            # Verify
+            time.sleep(1)
+            new_pos = self.get_positions_only()[motor_name]
+            if new_pos['deg'] is not None:
+                print(f"New position: {new_pos['deg']:.2f}°")
+            
+            return True
+        except Exception as e:
+            print(f"✗ Failed to set zero position for {motor_name}: {e}")
+            return False
+    
+    def get_current_positions_deg(self):
+        """获取当前位置（度）"""
+        positions = self.get_positions_only()
+        return [positions[f'm{i+1}']['deg'] for i in range(5)]
+    
+    def linear_interpolation(self, start_pos, end_pos, duration, update_rate=50):
+        """
+        线性插值生成轨迹点
+        
+        Args:
+            start_pos: 起始位置列表 [j1, j2, j3, j4, j5] (度)
+            end_pos: 结束位置列表 [j1, j2, j3, j4, j5] (度)
+            duration: 运动时间 (秒)
+            update_rate: 更新频率 (Hz)
+        
+        Returns:
+            trajectory: 轨迹点列表，每个点是 [j1, j2, j3, j4, j5, time]
+        """
+        num_points = int(duration * update_rate)
+        trajectory = []
+        
+        for i in range(num_points + 1):
+            t = i / num_points  # 归一化时间 [0, 1]
+            
+            # 线性插值
+            current_pos = []
+            for j in range(5):
+                pos = start_pos[j] + t * (end_pos[j] - start_pos[j])
+                current_pos.append(pos)
+            
+            time_stamp = t * duration
+            trajectory.append(current_pos + [time_stamp])
+        
+        return trajectory
+    
+    def smooth_interpolation(self, start_pos, end_pos, duration, update_rate=50):
+        """
+        平滑插值（S曲线）生成轨迹点
+        
+        Args:
+            start_pos: 起始位置列表 [j1, j2, j3, j4, j5] (度)
+            end_pos: 结束位置列表 [j1, j2, j3, j4, j5] (度)
+            duration: 运动时间 (秒)
+            update_rate: 更新频率 (Hz)
+        
+        Returns:
+            trajectory: 轨迹点列表，每个点是 [j1, j2, j3, j4, j5, time]
+        """
+        num_points = int(duration * update_rate)
+        trajectory = []
+        
+        for i in range(num_points + 1):
+            t = i / num_points  # 归一化时间 [0, 1]
+            
+            # S曲线插值 (3次多项式: 3t² - 2t³)
+            s = 3 * t**2 - 2 * t**3
+            
+            # 应用插值
+            current_pos = []
+            for j in range(5):
+                pos = start_pos[j] + s * (end_pos[j] - start_pos[j])
+                current_pos.append(pos)
+            
+            time_stamp = t * duration
+            trajectory.append(current_pos + [time_stamp])
+        
+        return trajectory
+    
+    def execute_trajectory(self, trajectory, verbose=True):
+        """
+        执行轨迹
+        
+        Args:
+            trajectory: 轨迹点列表
+            verbose: 是否打印详细信息
+        """
+        print("开始执行轨迹...")
+        
+        # 启用所有电机
+        self.enable_all_motors()
+        
+        start_time = time.time()
+        
+        try:
+            for i, point in enumerate(trajectory):
+                target_positions = point[:5]  # 前5个是关节位置
+                target_time = point[5]        # 第6个是时间戳
+                
+                # 等待到达目标时间
+                while (time.time() - start_time) < target_time:
+                    time.sleep(0.001)  # 1ms精度
+                
+                # 发送位置命令到各个电机
+                for motor_idx, target_deg in enumerate(target_positions):
+                    motor_name = f'm{motor_idx + 1}'
+                    if motor_name in self.motors:
+                        motor = self.motors[motor_name]
+                        try:
+                            # 转换为弧度
+                            target_rad = math.radians(target_deg)
+                            # 使用每个电机的个性化参数
+                            motor_params = motor_config[motor_name]
+                            kp = motor_params['kp']
+                            kd = motor_params['kd']
+                            torque = motor_params['torque']
+                            # 使用MIT控制模式：位置控制
+                            self.mc.controlMIT(motor, kp, kd, target_rad, 0.0, torque)
+                        except Exception as e:
+                            if verbose:
+                                print(f"警告: 电机 {motor_name} 设置失败: {e}")
+                
+                # 打印进度
+                if verbose and i % 10 == 0:  # 每10个点打印一次
+                    progress = (i / len(trajectory)) * 100
+                    current_pos = self.get_current_positions_deg()
+                    print(f"进度: {progress:.1f}% | 目标: {[f'{p:.1f}' for p in target_positions]} | "
+                          f"实际: {[f'{p:.1f}' for p in current_pos]}")
+        
+        except KeyboardInterrupt:
+            print("\n运动被中断")
+        
+        finally:
+            # 安全停止
+            print("停止所有电机...")
+            self.disable_all_motors()
+        
+        # 验证最终位置
+        final_pos = self.get_current_positions_deg()
+        print(f"\n轨迹执行完成!")
+        print(f"最终位置: {[f'{p:.2f}°' for p in final_pos]}")
+        
+        return final_pos
+    
+    def home_to_zero(self, duration=1.0, interpolation_type='smooth'):
+        """
+        回零主函数
+        
+        Args:
+            duration: 运动时间 (秒)
+            interpolation_type: 插值类型 ('linear' 或 'smooth')
+        
+        Returns:
+            success: 是否成功回零
+        """
+        print("=== IC ARM 回零运动 ===")
+        
+        target_positions = [0.0, 0.0, 0.0, 0.0, 0.0]  # 目标零点位置（度）
+        
+        # 获取当前位置
+        print("读取当前位置...")
+        current_pos = self.get_current_positions_deg()
+        print(f"当前位置: {[f'{p:.2f}°' for p in current_pos]}")
+        print(f"目标位置: {[f'{p:.2f}°' for p in target_positions]}")
+        
+        # 计算运动距离
+        distances = [abs(current_pos[i] - target_positions[i]) for i in range(5)]
+        max_distance = max(distances)
+        print(f"最大运动距离: {max_distance:.2f}°")
+        
+        if max_distance < 1.0:
+            print("已经接近零点位置，无需回零")
+            return True
+        
+        # 生成轨迹
+        print(f"生成{interpolation_type}插值轨迹，时长{duration}秒...")
+        if interpolation_type == 'linear':
+            trajectory = self.linear_interpolation(current_pos, target_positions, duration)
+        else:
+            trajectory = self.smooth_interpolation(current_pos, target_positions, duration)
+        
+        print(f"轨迹点数: {len(trajectory)}")
+        
+        # 执行轨迹
+        final_pos = self.execute_trajectory(trajectory)
+        
+        # 计算误差
+        errors = [abs(final_pos[i] - target_positions[i]) for i in range(5)]
+        print(f"位置误差: {[f'{e:.2f}°' for e in errors]}")
+        max_error = max(errors)
+        print(f"最大误差: {max_error:.2f}°")
+        
+        success = max_error < 2.0  # 如果最大误差小于2度认为成功
+        
+        if success:
+            print("✓ 回零成功!")
+        else:
+            print("✗ 回零精度不足，可能需要调整参数")
+        
+        return success
+    
+    def move_to_position(self, target_positions, duration=2.0, interpolation_type='smooth'):
+        """
+        移动到指定位置
+        
+        Args:
+            target_positions: 目标位置列表 [j1, j2, j3, j4, j5] (度)
+            duration: 运动时间 (秒)
+            interpolation_type: 插值类型 ('linear' 或 'smooth')
+        
+        Returns:
+            success: 是否成功到达目标位置
+        """
+        print(f"=== 移动到目标位置 ===")
+        
+        # 获取当前位置
+        current_pos = self.get_current_positions_deg()
+        print(f"当前位置: {[f'{p:.2f}°' for p in current_pos]}")
+        print(f"目标位置: {[f'{p:.2f}°' for p in target_positions]}")
+        
+        # 计算运动距离
+        distances = [abs(current_pos[i] - target_positions[i]) for i in range(5)]
+        max_distance = max(distances)
+        print(f"最大运动距离: {max_distance:.2f}°")
+        
+        # 生成轨迹
+        print(f"生成{interpolation_type}插值轨迹，时长{duration}秒...")
+        if interpolation_type == 'linear':
+            trajectory = self.linear_interpolation(current_pos, target_positions, duration)
+        else:
+            trajectory = self.smooth_interpolation(current_pos, target_positions, duration)
+        
+        print(f"轨迹点数: {len(trajectory)}")
+        
+        # 执行轨迹
+        final_pos = self.execute_trajectory(trajectory)
+        
+        # 计算误差
+        errors = [abs(final_pos[i] - target_positions[i]) for i in range(5)]
+        print(f"位置误差: {[f'{e:.2f}°' for e in errors]}")
+        max_error = max(errors)
+        print(f"最大误差: {max_error:.2f}°")
+        
+        success = max_error < 3.0  # 如果最大误差小于3度认为成功
+        
+        if success:
+            print("✓ 运动成功!")
+        else:
+            print("✗ 运动精度不足，可能需要调整参数")
+        
+        return success
     
     def close(self):
         """Close serial connection and cleanup"""
