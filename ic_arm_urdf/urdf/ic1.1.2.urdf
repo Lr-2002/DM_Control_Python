@@ -195,7 +195,7 @@
 		type="continuous">
 		<origin
 			xyz="0.239291817338248 0.0267286211992953 0"
-			rpy="-1.2 0 3.14" />
+			rpy="-0 0 3.14" />
 		<parent
 			link="l2" />
 		<child
@@ -248,7 +248,7 @@
 		type="revolute">
 		<origin
 			xyz="-0.129008182661752 0 0"
-			rpy="0 2.5 0" />
+			rpy="0 0 0" />
 		<parent
 			link="l3" />
 		<child
