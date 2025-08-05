@@ -22,20 +22,17 @@ class ICARM:
         # Initialize motor control
         self.mc = MotorControl(self.serial_device)
         
-        # Initialize all motors
-        self.motors = {
-            'm1': Motor(DM_Motor_Type.DM4340, 0x01, 0x00),
-            'm2': Motor(DM_Motor_Type.DM4340, 0x02, 0x00),
-            'm3': Motor(DM_Motor_Type.DM4340, 0x03, 0x00),
-            'm4': Motor(DM_Motor_Type.DM4340, 0x04, 0x00),
-            'm5': Motor(DM_Motor_Type.DM4340, 0x05, 0x00)
-        }
+        # Initialize all motors using motor_config parameters
+        self.motors = {}
+        for motor_name, config in motor_config.items():
+            motor = Motor(config['type'], config['id'], config['master_id'])
+            self.motors[motor_name] = motor
         
         # Add all motors to motor control
         for motor_name, motor in self.motors.items():
             self.mc.addMotor(motor)
             
-        print(f"ICARM initialized with {len(self.motors)} motors")
+        print(f"ICARM initialized with {len(self.motors)} motors using motor_config parameters")
     
     def read_all_motor_info(self):
         """Read all motor information and print as a table"""
