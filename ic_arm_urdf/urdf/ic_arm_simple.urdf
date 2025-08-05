@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Simplified IC ARM URDF for MuJoCo - using basic geometry instead of meshes -->
+<robot name="ic_arm_simple">
+  
+  <!-- Base Link -->
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0.05" rpy="0 0 0" />
+      <mass value="0.5" />
+      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0.05" rpy="0 0 0" />
+      <geometry>
+        <box size="0.15 0.15 0.1" />
+      </geometry>
+      <material name="base_material">
+        <color rgba="0.3 0.3 0.3 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.05" rpy="0 0 0" />
+      <geometry>
+        <box size="0.15 0.15 0.1" />
+      </geometry>
+    </collision>
+  </link>
+  
+  <!-- Link 1 -->
+  <link name="l1">
+    <inertial>
+      <origin xyz="0 0 0.1" rpy="0 0 0" />
+      <mass value="0.3" />
+      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 0.1" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.04" length="0.2" />
+      </geometry>
+      <material name="link1_material">
+        <color rgba="0.8 0.2 0.2 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.1" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.04" length="0.2" />
+      </geometry>
+    </collision>
+  </link>
+  
+  <!-- Joint 1 (Base to Link 1) -->
+  <joint name="j1" type="continuous">
+    <origin xyz="0 0 0.1" rpy="0 0 0" />
+    <parent link="base_link" />
+    <child link="l1" />
+    <axis xyz="0 0 1" />
+  </joint>
+  
+  <!-- Link 2 -->
+  <link name="l2">
+    <inertial>
+      <origin xyz="0.15 0 0" rpy="0 0 0" />
+      <mass value="0.4" />
+      <inertia ixx="0.002" ixy="0" ixz="0" iyy="0.002" iyz="0" izz="0.001" />
+    </inertial>
+    <visual>
+      <origin xyz="0.15 0 0" rpy="0 1.57 0" />
+      <geometry>
+        <cylinder radius="0.035" length="0.3" />
+      </geometry>
+      <material name="link2_material">
+        <color rgba="0.2 0.8 0.2 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.15 0 0" rpy="0 1.57 0" />
+      <geometry>
+        <cylinder radius="0.035" length="0.3" />
+      </geometry>
+    </collision>
+  </link>
+  
+  <!-- Joint 2 (Link 1 to Link 2) -->
+  <joint name="j2" type="continuous">
+    <origin xyz="0 0 0.2" rpy="0 0 0" />
+    <parent link="l1" />
+    <child link="l2" />
+    <axis xyz="1 0 0" />
+  </joint>
+  
+  <!-- Link 3 -->
+  <link name="l3">
+    <inertial>
+      <origin xyz="0.12 0 0" rpy="0 0 0" />
+      <mass value="0.3" />
+      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.001" />
+    </inertial>
+    <visual>
+      <origin xyz="0.12 0 0" rpy="0 1.57 0" />
+      <geometry>
+        <cylinder radius="0.03" length="0.24" />
+      </geometry>
+      <material name="link3_material">
+        <color rgba="0.2 0.2 0.8 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.12 0 0" rpy="0 1.57 0" />
+      <geometry>
+        <cylinder radius="0.03" length="0.24" />
+      </geometry>
+    </collision>
+  </link>
+  
+  <!-- Joint 3 (Link 2 to Link 3) -->
+  <joint name="j3" type="continuous">
+    <origin xyz="0.3 0 0" rpy="0 0 0" />
+    <parent link="l2" />
+    <child link="l3" />
+    <axis xyz="1 0 0" />
+  </joint>
+  
+  <!-- Link 4 -->
+  <link name="l4">
+    <inertial>
+      <origin xyz="0.08 0 0" rpy="0 0 0" />
+      <mass value="0.25" />
+      <inertia ixx="0.0008" ixy="0" ixz="0" iyy="0.0008" iyz="0" izz="0.0008" />
+    </inertial>
+    <visual>
+      <origin xyz="0.08 0 0" rpy="0 1.57 0" />
+      <geometry>
+        <cylinder radius="0.025" length="0.16" />
+      </geometry>
+      <material name="link4_material">
+        <color rgba="0.8 0.8 0.2 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.08 0 0" rpy="0 1.57 0" />
+      <geometry>
+        <cylinder radius="0.025" length="0.16" />
+      </geometry>
+    </collision>
+  </link>
+  
+  <!-- Joint 4 (Link 3 to Link 4) -->
+  <joint name="j4" type="revolute">
+    <origin xyz="0.24 0 0" rpy="0 0 0" />
+    <parent link="l3" />
+    <child link="l4" />
+    <axis xyz="0 1 0" />
+    <limit lower="-1.6" upper="1.6" effort="10" velocity="2" />
+  </joint>
+  
+  <!-- Link 5 (End Effector) -->
+  <link name="l5">
+    <inertial>
+      <origin xyz="0 0 -0.05" rpy="0 0 0" />
+      <mass value="0.15" />
+      <inertia ixx="0.0005" ixy="0" ixz="0" iyy="0.0005" iyz="0" izz="0.0005" />
+    </inertial>
+    <visual>
+      <origin xyz="0 0 -0.05" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.02" length="0.1" />
+      </geometry>
+      <material name="link5_material">
+        <color rgba="0.8 0.2 0.8 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 -0.05" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.02" length="0.1" />
+      </geometry>
+    </collision>
+  </link>
+  
+  <!-- Joint 5 (Link 4 to Link 5) -->
+  <joint name="j5" type="continuous">
+    <origin xyz="0.16 0 0" rpy="0 0 0" />
+    <parent link="l4" />
+    <child link="l5" />
+    <axis xyz="0 0 1" />
+  </joint>
+  
+</robot>
