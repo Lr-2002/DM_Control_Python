@@ -317,29 +317,24 @@ class ICARM:
                 
                 # Create arrays for plotting
                 motor_names = list(positions.keys())
-                angles_rad = []
                 angles_deg = []
                 motor_ids = []
                 
                 for motor_name in motor_names:
                     pos_data = positions[motor_name]
-                    if pos_data['rad'] is not None:
-                        angles_rad.append(pos_data['rad'])
+                    if pos_data['deg'] is not None:
                         angles_deg.append(pos_data['deg'])
                         motor_ids.append(pos_data['id'])
                         
                         # Log individual motor position
-                        rr.log(f"motors/{motor_name}/position_rad", rr.Scalars(float(pos_data['rad'])))
                         rr.log(f"motors/{motor_name}/position_deg", rr.Scalars(float(pos_data['deg'])))
                     else:
-                        angles_rad.append(0.0)
                         angles_deg.append(0.0)
                         motor_ids.append(pos_data['id'])
                 
                 # Log combined data as time series
-                if angles_rad:
+                if angles_deg:
                     for i, motor_name in enumerate(motor_names):
-                        rr.log(f"overview/motor_{motor_name}_rad", rr.Scalars(float(angles_rad[i])))
                         rr.log(f"overview/motor_{motor_name}_deg", rr.Scalars(float(angles_deg[i])))
                 
                 # Print to console (compact format)
