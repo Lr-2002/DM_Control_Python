@@ -404,6 +404,48 @@ class ICARM:
         self.dq_prev = self.dq.copy()
         self.last_update_time = current_time
     
+    def _refresh_all_states_ultra_fast(self):
+        """超快速状态刷新，最小化CAN通信和计算开销"""
+        current_time = time.time()
+        dt = current_time - self.last_update_time
+        
+        # 批量刷新所有电机状态（减少CAN通信次数）
+        active_motors = [motor for motor_name, motor in self.motors.items() 
+                        if motor_name in ['m1', 'm2', 'm3', 'm4', 'm5']]
+        
+        # 批量发送状态查询命令
+        for motor in active_motors:
+            # 直接发送CAN命令，不等待响应
+            can_id_l = motor.SlaveID & 0xff
+            can_id_h = (motor.SlaveID >> 8) & 0xff
+            data_buf = np.array([np.uint8(can_id_l), np.uint8(can_id_h), 0xCC, 0x00, 0x00, 0x00, 0x00, 0x00], np.uint8)
+            self.mc._MotorControl__send_data(0x7FF, data_buf)
+        
+        # 批量接收响应
+        for _ in range(len(active_motors)):
+            self.mc.recv()
+        
+        # 快速读取并更新状态（无类型检查）
+        motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
+        for i, motor_name in enumerate(motor_names):
+            if motor_name in self.motors:
+                motor = self.motors[motor_name]
+                self.q[i] = motor.state_q  # 直接访问状态变量
+                self.dq[i] = motor.state_dq
+                self.tau[i] = motor.state_tau
+        
+        # 最简化的加速度计算
+        if dt > 0 and hasattr(self, 'dq_prev'):
+            self.ddq = (self.dq - self.dq_prev) / dt
+        
+        # 简化电流估算
+        self.currents = self.tau * 10.0  # 快速估算，避免除法
+        
+        # 最小化历史更新
+        self.q_prev = self.q.copy()
+        self.dq_prev = self.dq.copy()
+        self.last_update_time = current_time
+    
     # ========== PUBLIC READ INTERFACES ==========
     
     def get_joint_positions(self, refresh=True):

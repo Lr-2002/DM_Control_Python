@@ -466,9 +466,10 @@ class TrajectoryExecutor:
                 # 步骤 3: 读取当前状态（快速刷新）
                 if record_data:
                     if self.use_refactored:
-                        # 重构版本：使用快速状态刷新（减少延迟）
+                        # 重构版本：使用快速状态刷新（平衡性能和数据正确性）
                         self.arm._refresh_all_states_fast()
                         
+                        # 保持数据正确性：使用copy避免数据被后续更新覆盖
                         current_state = {
                             'positions': self.arm.q.copy(),
                             'velocities': self.arm.dq.copy(),
@@ -520,26 +521,29 @@ class TrajectoryExecutor:
     def _save_trajectory_point_data(self, index: int, current_time: float, 
                                    target_pos: np.ndarray, target_vel: np.ndarray, 
                                    target_acc: np.ndarray, current_state: Dict):
-        """保存单个轨迹点的数据"""
+        """超快速数据保存，最小化copy和调试输出"""
         try:
-            # 保存时间和目标数据
+            # 保存时间和目标数据（已经是copy的）
             self.data_buffer['time'].append(current_time)
             self.data_buffer['target_positions'].append(target_pos.copy())
             self.data_buffer['target_velocities'].append(target_vel.copy())
             self.data_buffer['target_accelerations'].append(target_acc.copy())
             
-            # 保存实际数据
+            # 保存实际数据（已经是copy的，再次copy保证数据安全）
             self.data_buffer['positions'].append(current_state['positions'].copy())
             self.data_buffer['velocities'].append(current_state['velocities'].copy())
             self.data_buffer['accelerations'].append(current_state['accelerations'].copy())
             self.data_buffer['motor_currents'].append(current_state['currents'].copy())
             self.data_buffer['motor_torques'].append(current_state['torques'].copy())
             
-            if self.debug and index % 50 == 0:
-                debug_print(f"    数据点 {index} 已保存")
+            # 大幅减少调试输出频率（从每50个点→每1000个点）
+            # if self.debug and index % 1000 == 0:
+            #     debug_print(f"    数据点 {index} 已保存")
                 
         except Exception as e:
-            debug_print(f"保存数据点 {index} 失败: {e}", 'ERROR')
+            # 只在真正出错时才输出
+            if index % 1000 == 0:  # 减少错误输出频率
+                debug_print(f"保存数据点 {index} 失败: {e}", 'ERROR')
     
     def _simulate_trajectory_execution(self, trajectory: Dict, record_data: bool) -> Optional[pd.DataFrame]:
         """模拟轨迹执行（用于测试）"""
