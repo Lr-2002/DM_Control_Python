@@ -708,7 +708,7 @@ class TrajectoryExecutor:
         data.to_csv(filename, index=False)
         print(f"数据已保存到: {filename}")
     
-    def plot_results(self, data: pd.DataFrame, motor_id: int = 1):
+    def plot_results(self, data: pd.DataFrame, motor_id: int = 1, save_plot: bool = True, filename_base: str = None):
         """Plot execution results"""
         motor_name = f'm{motor_id}'
         
@@ -746,6 +746,24 @@ class TrajectoryExecutor:
         axes[3].grid(True)
         
         plt.tight_layout()
+        
+        # 保存图片到对应的文件名
+        if save_plot:
+            if filename_base is None:
+                # 生成默认文件名
+                from datetime import datetime
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename_base = f"trajectory_plot_{timestamp}"
+            
+            # 生成图片文件名（去掉.csv后缀，添加.png）
+            if filename_base.endswith('.csv'):
+                plot_filename = filename_base.replace('.csv', f'_motor_{motor_id}.png')
+            else:
+                plot_filename = f"{filename_base}_motor_{motor_id}.png"
+            
+            plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
+            print(f"图表已保存到: {plot_filename}")
+        
         plt.show()
     
     def __del__(self):
@@ -764,7 +782,8 @@ def main():
     executor = TrajectoryExecutor(use_hardware=True, sample_rate=100)
     
     # 加载并执行单个电机轨迹
-    trajectory_file = "trajectory_motor_5_single.json"
+    motor_id = 2
+    trajectory_file = f"trajectory_motor_{motor_id}_single.json"
     
     try:
         # 加载轨迹
@@ -780,11 +799,12 @@ def main():
             data_filename = f"dynamics_data_{timestamp}.csv"
             executor.save_data(data, data_filename)
             
-            # 绘制结果
-            executor.plot_results(data, motor_id=5)
+            # 绘制结果并保存到对应文件名（电机5）
+            executor.plot_results(data, motor_id=motor_id, save_plot=True, filename_base=data_filename)
             
             print(f"\n执行完成!")
             print(f"数据文件: {data_filename}")
+            print(f"图表文件: {data_filename.replace('.csv', f'_motor_{motor_id}.png')}")
         else:
             print("执行失败，未采集到数据")
     
