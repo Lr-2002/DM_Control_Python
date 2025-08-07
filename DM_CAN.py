@@ -205,6 +205,7 @@ class MotorControl:
         """
         self.__control_cmd(Motor, np.uint8(0xFC))
         sleep(0.1)
+        Motor.isEnable=True
         self.recv()  # receive the data from serial port
 
     def enable_old(self, Motor ,ControlMode):
@@ -227,6 +228,7 @@ class MotorControl:
         """
         self.__control_cmd(Motor, np.uint8(0xFD))
         sleep(0.1)
+        Motor.isEnable=False
         self.recv()  # receive the data from serial port
 
     def set_zero_position(self, Motor):
