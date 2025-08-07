@@ -4,6 +4,58 @@
 		 For more information, please see http://wiki.ros.org/sw_urdf_exporter -->
 <robot
 	name="ic1.1.2">
+	<!-- BASE ROOT MARKER - Small sphere at base_link origin -->
+	<link
+		name="base_root_marker">
+		<inertial>
+			<origin
+				xyz="0 0 0"
+				rpy="0 0 0" />
+			<mass
+				value="0.001" />
+			<inertia
+				ixx="0.000001"
+				ixy="0"
+				ixz="0"
+				iyy="0.000001"
+				iyz="0"
+				izz="0.000001" />
+		</inertial>
+		<visual>
+			<origin
+				xyz="0 0 0"
+				rpy="0 0 0" />
+			<geometry>
+				<sphere radius="0.01" />
+			</geometry>
+			<material
+				name="base_marker_red">
+				<color
+					rgba="1 0 0 1" />
+			</material>
+		</visual>
+		<collision>
+			<origin
+				xyz="0 0 0"
+				rpy="0 0 0" />
+			<geometry>
+				<sphere radius="0.01" />
+			</geometry>
+		</collision>
+	</link>
+
+	<!-- Fixed joint to attach marker to base_link -->
+	<joint
+		name="base_to_marker"
+		type="fixed">
+		<origin
+			xyz="0.47073 0.121 -0.2423"
+			rpy="1.57 0 0" />
+		<parent
+			link="base_root_marker" />
+		<child
+			link="base_link" />
+	</joint>
 	<link
 		name="base_link">
 		<inertial>
@@ -44,6 +96,9 @@
 			</geometry>
 		</collision>
 	</link>
+
+
+
 	<link
 		name="l1">
 		<inertial>
@@ -86,10 +141,10 @@
 	</link>
 	<joint
 		name="j1"
-		type="revolute">
+		type="continuous">
 		<origin
 			xyz="-0.29856 0.0020693 0.21104"
-			rpy="1.5708 0 1.1547" />
+			rpy="1.5708 0. 1.4647" />
 		<parent
 			link="base_link" />
 		<child
@@ -248,7 +303,7 @@
 		type="revolute">
 		<origin
 			xyz="-0.129008182661752 0 0"
-			rpy="0 0 0" />
+			rpy="0 0.087 0" />
 		<parent
 			link="l3" />
 		<child
@@ -312,6 +367,6 @@
 		<child
 			link="l5" />
 		<axis
-			xyz="0 0 1" />
+			xyz="0 0 -1" />
 	</joint>
 </robot>

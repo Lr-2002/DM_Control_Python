@@ -1,0 +1,274 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- This file contains a robot description (URDF) for Pinocchio -->
+<!-- Modified from ic1.1.2.urdf to include joint limits required by Pinocchio -->
+<robot
+	name="ic_arm">
+	<link
+		name="base_link">
+		<inertial>
+			<origin
+				xyz="0.0 0.0 0.0"
+				rpy="0 0 0" />
+			<mass
+				value="1.0" />
+			<inertia
+				ixx="0.001"
+				ixy="0.0"
+				ixz="0.0"
+				iyy="0.001"
+				iyz="0.0"
+				izz="0.001" />
+		</inertial>
+		<visual>
+			<origin
+				xyz="0 0 0"
+				rpy="0 0 0" />
+			<geometry>
+				<box size="0.1 0.1 0.1"/>
+			</geometry>
+			<material name="base_material">
+				<color rgba="0.8 0.8 0.8 1" />
+			</material>
+		</visual>
+	</link>
+	
+	<link
+		name="l1">
+		<inertial>
+			<origin
+				xyz="-0.0738485691400352 -0.0276499999999996 0.0"
+				rpy="0 0 0" />
+			<mass
+				value="0.301661437311036" />
+			<inertia
+				ixx="0.000143491154639993"
+				ixy="-2.5129579364346E-07"
+				ixz="-4.05027387114055E-08"
+				iyy="0.000242262360164897"
+				iyz="1.62108577569322E-08"
+				izz="0.000177268625082043" />
+		</inertial>
+		<visual>
+			<origin
+				xyz="0 0 0"
+				rpy="0 0 0" />
+			<geometry>
+				<cylinder radius="0.05" length="0.1"/>
+			</geometry>
+			<material name="l1_material">
+				<color rgba="1 0 0 1" />
+			</material>
+		</visual>
+	</link>
+	
+	<joint
+		name="j1"
+		type="revolute">
+		<origin
+			xyz="-0.29856 0.0020693 0.21104"
+			rpy="1.5708 0 1.1547" />
+		<parent
+			link="base_link" />
+		<child
+			link="l1" />
+		<axis
+			xyz="0 1 0" />
+		<limit
+			lower="-3.14159"
+			upper="3.14159"
+			effort="100"
+			velocity="10" />
+	</joint>
+	
+	<link
+		name="l2">
+		<inertial>
+			<origin
+				xyz="-0.109943403200528 0.00208057979858922 -1.08037533150251E-06"
+				rpy="0 0 0" />
+			<mass
+				value="0.301661437311036" />
+			<inertia
+				ixx="0.000143491154639993"
+				ixy="-2.5129579364346E-07"
+				ixz="-4.05027387114055E-08"
+				iyy="0.000242262360164897"
+				iyz="1.62108577569322E-08"
+				izz="0.000177268625082043" />
+		</inertial>
+		<visual>
+			<origin
+				xyz="0 0 0"
+				rpy="0 0 0" />
+			<geometry>
+				<cylinder radius="0.04" length="0.15"/>
+			</geometry>
+			<material name="l2_material">
+				<color rgba="0 1 0 1" />
+			</material>
+		</visual>
+	</link>
+	
+	<joint
+		name="j2"
+		type="revolute">
+		<origin
+			xyz="0.176971378800704 -0.0552999999999993 0"
+			rpy="0 1.57 -1.57079632679489" />
+		<parent
+			link="l1" />
+		<child
+			link="l2" />
+		<axis
+			xyz="0 1 0" />
+		<limit
+			lower="-3.14159"
+			upper="3.14159"
+			effort="100"
+			velocity="10" />
+	</joint>
+	
+	<link
+		name="l3">
+		<inertial>
+			<origin
+				xyz="-0.109943403200528 0.00208057979858922 -1.08037533150251E-06"
+				rpy="0 0 0" />
+			<mass
+				value="0.301661437311036" />
+			<inertia
+				ixx="0.000143491154639993"
+				ixy="-2.5129579364346E-07"
+				ixz="-4.05027387114055E-08"
+				iyy="0.000242262360164897"
+				iyz="1.62108577569322E-08"
+				izz="0.000177268625082043" />
+		</inertial>
+		<visual>
+			<origin
+				xyz="0 0 0"
+				rpy="0 0 0" />
+			<geometry>
+				<cylinder radius="0.04" length="0.15"/>
+			</geometry>
+			<material name="l3_material">
+				<color rgba="0 0 1 1" />
+			</material>
+		</visual>
+	</link>
+	
+	<joint
+		name="j3"
+		type="revolute">
+		<origin
+			xyz="0.239291817338248 0.0267286211992953 0"
+			rpy="0 0 3.14" />
+		<parent
+			link="l2" />
+		<child
+			link="l3" />
+		<axis
+			xyz="-1 0 0" />
+		<limit
+			lower="-3.14159"
+			upper="3.14159"
+			effort="100"
+			velocity="10" />
+	</joint>
+	
+	<link
+		name="l4">
+		<inertial>
+			<origin
+				xyz="-0.0719024636211236 0.0371837584221808 0.0369977170552586"
+				rpy="0 0 0" />
+			<mass
+				value="0.356837818566484" />
+			<inertia
+				ixx="0.00074455347502792"
+				ixy="0.000152142345766084"
+				ixz="0.000123700221056116"
+				iyy="0.000827958622307639"
+				iyz="-0.000209810266491571"
+				izz="0.000818475725962542" />
+		</inertial>
+		<visual>
+			<origin
+				xyz="0 0 0"
+				rpy="0 0 0" />
+			<geometry>
+				<cylinder radius="0.03" length="0.1"/>
+			</geometry>
+			<material name="l4_material">
+				<color rgba="1 1 0 1" />
+			</material>
+		</visual>
+	</link>
+	
+	<joint
+		name="j4"
+		type="revolute">
+		<origin
+			xyz="-0.129008182661752 0 0"
+			rpy="0 0 0" />
+		<parent
+			link="l3" />
+		<child
+			link="l4" />
+		<axis
+			xyz="0 -1 0" />
+		<limit
+			lower="-3.14159"
+			upper="3.14159"
+			effort="100"
+			velocity="10" />
+	</joint>
+	
+	<link
+		name="l5">
+		<inertial>
+			<origin
+				xyz="-0.0379164384977502 0.0356500000000003 0.0350000000000001"
+				rpy="0 0 0" />
+			<mass
+				value="0.0947161504424779" />
+			<inertia
+				ixx="0.000270532442358034"
+				ixy="-1.97454104589701E-06"
+				ixz="1.12789222485375E-05"
+				iyy="0.000273026809704054"
+				iyz="1.17931137142189E-05"
+				izz="3.99937954343094E-05" />
+		</inertial>
+		<visual>
+			<origin
+				xyz="0 0 0"
+				rpy="0 0 0" />
+			<geometry>
+				<cylinder radius="0.025" length="0.08"/>
+			</geometry>
+			<material name="l5_material">
+				<color rgba="1 0 1 1" />
+			</material>
+		</visual>
+	</link>
+	
+	<joint
+		name="j5"
+		type="revolute">
+		<origin
+			xyz="-0.0758328769955004 0.0713000000000006 0.0700000000000002"
+			rpy="-1.57079632679489 1.22460020901222 -1.57079632679489" />
+		<parent
+			link="l4" />
+		<child
+			link="l5" />
+		<axis
+			xyz="0 0 -1" />
+		<limit
+			lower="-3.14159"
+			upper="3.14159"
+			effort="100"
+			velocity="10" />
+	</joint>
+</robot>
