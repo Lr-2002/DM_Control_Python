@@ -4,8 +4,15 @@ import serial
 import time
 import rerun as rr
 import numpy as np
+# motor_config = {
+#     'm1': {'type': DM_Motor_Type.DM4340, 'id': 0x01, 'master_id': 0x00, 'kp': 60, 'kd': 1.5, 'torque': 0},
+#     'm2': {'type': DM_Motor_Type.DM4340, 'id': 0x02, 'master_id': 0x00, 'kp': 45, 'kd': 1.5, 'torque': 0.},
+#     'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 40, 'kd': 1.5, 'torque': 0.5},
+#     'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 38, 'kd': 1.5, 'torque': 0.0},
+#     'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 35, 'kd': 1.5, 'torque': 0.5},
+#     }
 motor_config = {
-    'm1': {'type': DM_Motor_Type.DM4340, 'id': 0x01, 'master_id': 0x00, 'kp': 40, 'kd': 1.5, 'torque': 5},
+    'm1': {'type': DM_Motor_Type.DM4340, 'id': 0x01, 'master_id': 0x00, 'kp': 00, 'kd': 0, 'torque': 0},
     'm2': {'type': DM_Motor_Type.DM4340, 'id': 0x02, 'master_id': 0x00, 'kp': 45, 'kd': 1.5, 'torque': 0.},
     'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 40, 'kd': 1.5, 'torque': 0.5},
     'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 38, 'kd': 1.5, 'torque': 0.0},
@@ -13,12 +20,13 @@ motor_config = {
     }
 
 
+
 class ICARM:
     def __init__(self, serial_port='/dev/cu.usbmodem00000000050C1', baudrate=921600):
         """Initialize the ICARM system with all motors"""
         # Initialize serial connection
         self.serial_device = serial.Serial(serial_port, baudrate, timeout=0.5)
-        
+        self.motor_config = motor_config
         # Initialize motor control
         self.mc = MotorControl(self.serial_device)
         
@@ -33,7 +41,22 @@ class ICARM:
             self.mc.addMotor(motor)
             
         print(f"ICARM initialized with {len(self.motors)} motors using motor_config parameters")
-    
+        self.read_all_motor_info()
+        # self.read_all_angles()
+        
+        # 状态变量：位置、速度、加速度（弧度）
+        self.q = np.zeros(5)      # 关节位置 (rad)
+        self.dq = np.zeros(5)     # 关节速度 (rad/s)
+        self.ddq = np.zeros(5)    # 关节加速度 (rad/s²)
+        
+        # 历史状态用于数值微分
+        self.q_prev = np.zeros(5)
+        self.dq_prev = np.zeros(5)
+        self.last_update_time = time.time()
+        
+        # 初始化状态
+        self.update_state() 
+
     def read_all_motor_info(self):
         """Read all motor information and print as a table"""
         print("\n" + "="*80)
@@ -69,8 +92,9 @@ class ICARM:
         angles = {}
         for motor_name, motor in self.motors.items():
             try:
+                self.mc.refresh_motor_status(motor)
                 angle_rad = motor.getPosition()
-                print(angle_rad)
+                # print(angle_rad)
                 angle_deg = math.degrees(angle_rad)
                 angles[motor_name] = angle_rad
                 status = "OK"
@@ -111,11 +135,11 @@ class ICARM:
     
     def read_all_currents(self):
         """Read all motor currents (torques) and print as a table"""
-        print("\n" + "="*60)
-        print("MOTOR CURRENTS (TORQUES)")
-        print("="*60)
-        print(f"{'Motor':<8} {'ID':<4} {'Torque (Nm)':<15} {'Status':<10}")
-        print("-"*60)
+        # print("\n" + "="*60)
+        # print("MOTOR CURRENTS (TORQUES)")
+        # print("="*60)
+        # print(f"{'Motor':<8} {'ID':<4} {'Torque (Nm)':<15} {'Status':<10}")
+        # print("-"*60)
         
         currents = {}
         for motor_name, motor in self.motors.items():
@@ -127,10 +151,10 @@ class ICARM:
                 torque = "ERROR"
                 status = "FAIL"
                 
-            print(f"{motor_name:<8} {motor.SlaveID:<4} {torque:<15} {status:<10}")
-        
-        print("="*60)
-        print()
+            # print(f"{motor_name:<8} {motor.SlaveID:<4} {torque:<15} {status:<10}")
+            #
+        # print("="*60)
+        # print()
         return currents
     
     def enable_all_motors(self):
@@ -166,42 +190,28 @@ class ICARM:
         # Enable all motors first
         self.enable_all_motors()
         
-        # Try to send a small position command to activate feedback
-        # print("\nSending small position commands to activate feedback...")
-        # for motor_name, motor in self.motors.items():
-        #     try:
-        #         # Send a very small position command (0.01 rad) to activate the motor
-        #         self.mc.controlMIT(motor, 10, 1, 0.01, 0, 0)
-        #         time.sleep(0.1)
-        #     except Exception as e:
-        #         print(f"Failed to send command to {motor_name}: {e}")
-        
-        # time.sleep(0.5)  # Wait for response
         
         # Now read positions
         print("\nReading positions after enabling and commanding:")
         angles = self.read_all_angles()
         
-        # # Return to zero position
-        # print("\nReturning to zero position...")
-        # for motor_name, motor in self.motors.items():
-        #     try:
-        #         self.mc.controlMIT(motor, 10, 1, 0, 0, 0)
-        #         time.sleep(0.1)
-        #     except Exception as e:
-        #         print(f"Failed to return {motor_name} to zero: {e}")
-        
-        # time.sleep(0.5)
-        
+       
         return angles
     
     # ========== CONTROL API FUNCTIONS (Basic Implementation) ==========
     
+    def set_motor(self, motor_name, pos, vel, tor, kp=None, kd=None):
+        motor = self.motors[motor_name]
+        
+        kp , kd = self.motor_config[motor_name]['kp'] if not kp else kp, self.motor_config[motor_name]['kd'] if not kd else kd
+        self.mc.controlMIT(motor,kp, kd, pos, vel, tor)
+        return
+
     def enable_motor(self, motor_name):
         """Enable a specific motor"""
         if motor_name in self.motors:
             motor = self.motors[motor_name]
-            # TODO: Implement motor enable logic
+            self.mc.enable(motor)
             print(f"Enabling motor {motor_name}")
         else:
             print(f"Motor {motor_name} not found")
@@ -210,35 +220,35 @@ class ICARM:
         """Disable a specific motor"""
         if motor_name in self.motors:
             motor = self.motors[motor_name]
-            # TODO: Implement motor disable logic
-            print(f"Disabling motor {motor_name}")
+            self.mc.disable(motor)
         else:
             print(f"Motor {motor_name} not found")
     
     def set_position(self, motor_name, position, velocity=None, torque=None):
         """Set motor position with optional velocity and torque limits"""
         if motor_name in self.motors:
-            motor = self.motors[motor_name]
-            # TODO: Implement position control
-            print(f"Setting {motor_name} position to {position}")
+            self.set_motor(motor_name, position, velocity, torque)
+            # print(f"Setting {motor_name} position to {position}")
         else:
             print(f"Motor {motor_name} not found")
     
-    def set_velocity(self, motor_name, velocity, torque=None):
-        """Set motor velocity with optional torque limit"""
-        if motor_name in self.motors:
-            motor = self.motors[motor_name]
-            # TODO: Implement velocity control
-            print(f"Setting {motor_name} velocity to {velocity}")
-        else:
-            print(f"Motor {motor_name} not found")
-    
+    # def set_velocity(self, motor_name, velocity, torque=None):
+    #     """Set motor velocity with optional torque limit"""
+    #     if motor_name in self.motors:
+    #         motor = self.motors[motor_name]
+    #         #
+    #         self.set_motor(motor_name, , velocity, torque)
+    #         # TODO: Implement velocity control
+    #         print(f"Setting {motor_name} velocity to {velocity}")
+    #     else:
+    #         print(f"Motor {motor_name} not found")
+    #
     def set_torque(self, motor_name, torque):
         """Set motor torque"""
         if motor_name in self.motors:
             motor = self.motors[motor_name]
-            # TODO: Implement torque control
-            print(f"Setting {motor_name} torque to {torque}")
+            self.set_motor(motor_name, 0, 0, torque, kp=0, kd=0)
+            # print(f"Setting {motor_name} torque to {torque}")
         else:
             print(f"Motor {motor_name} not found")
     
@@ -268,6 +278,8 @@ class ICARM:
                 self.mc.refresh_motor_status(motor)
                 # Then read the position
                 angle_rad = motor.getPosition()
+                # print(f'{motor_name} angle_rad ', angle_rad)
+                # angle_deg = angle_rad * 180 / 3.14
                 angle_deg = math.degrees(angle_rad)
                 positions[motor_name] = {
                     'rad': angle_rad,
@@ -283,18 +295,109 @@ class ICARM:
                 }
         return positions
     
-    def monitor_positions_continuous(self, update_rate=10.0, duration=None):
+    def update_state(self):
+        """更新机器人状态（位置、速度、加速度）"""
+        current_time = time.time()
+        dt = current_time - self.last_update_time
+        
+        # 获取当前位置
+        try:
+            positions_data = self.get_positions_only()
+            if positions_data:
+                # 更新位置（转换为弧度）
+                for i, pos_data in enumerate(positions_data[:5]):
+                    if isinstance(pos_data, dict) and 'deg' in pos_data:
+                        self.q[i] = math.radians(pos_data['deg'])
+                    elif isinstance(pos_data, (int, float)):
+                        self.q[i] = math.radians(pos_data)
+                
+                # 计算速度（数值微分）
+                if dt > 0:
+                    self.dq = (self.q - self.q_prev) / dt
+                    # 计算加速度（二阶微分）
+                    self.ddq = (self.dq - self.dq_prev) / dt
+                
+                # 更新历史状态
+                self.q_prev = self.q.copy()
+                self.dq_prev = self.dq.copy()
+                self.last_update_time = current_time
+                
+        except Exception as e:
+            print(f"状态更新失败: {e}")
+    
+    def get_joint_positions(self, update=True):
+        """获取关节位置（弧度）"""
+        if update:
+            self.update_state()
+        return self.q.copy()
+    
+    def get_joint_velocities(self, update=True):
+        """获取关节速度（弧度/秒）"""
+        if update:
+            self.update_state()
+        return self.dq.copy()
+    
+    def get_joint_accelerations(self, update=True):
+        """获取关节加速度（弧度/秒²）"""
+        if update:
+            self.update_state()
+        return self.ddq.copy()
+    
+    def get_joint_torques(self):
+        """获取关节力矩（N·m）"""
+        try:
+            currents_dict = self.read_all_currents()
+            torques = np.zeros(5)
+            motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
+            
+            for i, motor_name in enumerate(motor_names):
+                if motor_name in currents_dict:
+                    torque_val = currents_dict[motor_name]
+                    if isinstance(torque_val, (int, float)):
+                        torques[i] = float(torque_val)
+            
+            return torques
+        except Exception as e:
+            print(f"获取力矩失败: {e}")
+            return np.zeros(5)
+    
+    def get_complete_state(self):
+        """获取完整的机器人状态"""
+        self.update_state()
+        return {
+            'positions': self.get_joint_positions(update=False),     # rad
+            'velocities': self.get_joint_velocities(update=False),   # rad/s
+            'accelerations': self.get_joint_accelerations(update=False), # rad/s²
+            'torques': self.get_joint_torques(),                     # N·m
+            'timestamp': self.last_update_time
+        }
+    
+    def monitor_positions_continuous(self, update_rate=10.0, duration=None, save_csv=False, csv_filename=None):
         """Continuously monitor and display motor positions using rerun
         
         Args:
             update_rate: Updates per second (Hz)
             duration: Duration in seconds (None for infinite)
+            save_csv: Whether to save data to CSV file
+            csv_filename: CSV filename (auto-generated if None)
         """
         # Initialize rerun
         rr.init("ICARM_Position_Monitor", spawn=True)
         
+        # CSV setup
+        csv_data = []
+        if save_csv:
+            import csv
+            from datetime import datetime
+            if csv_filename is None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                csv_filename = f"icarm_positions_{timestamp}.csv"
+            print(f"CSV保存已启用，文件: {csv_filename}")
+        
         print("Starting continuous position monitoring...")
         print("Press Ctrl+C to stop")
+        if save_csv:
+            print(f"数据将保存到: {csv_filename}")
         
         # Enable all motors first
         self.enable_all_motors()
@@ -312,7 +415,22 @@ class ICARM:
                 
                 # Get positions
                 positions = self.get_positions_only()
-                print(positions)
+                
+                # CSV data collection
+                if save_csv:
+                    elapsed_time = current_time - start_time
+                    unix_timestamp = int(current_time * 1000)  # Unix时间戳（毫秒）
+                    csv_row = {
+                        'timestamp': elapsed_time,
+                        'unix_timestamp': unix_timestamp,
+                        'datetime': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(current_time))
+                    }
+                    for motor_name, pos_data in positions.items():
+                        csv_row[f'{motor_name}_deg'] = pos_data['deg'] if pos_data['deg'] is not None else 0.0
+                        csv_row[f'{motor_name}_rad'] = pos_data['rad'] if pos_data['rad'] is not None else 0.0
+                        csv_row[f'{motor_name}_id'] = pos_data['id']
+                    csv_data.append(csv_row)
+                
                 # Log to rerun
                 rr.set_time_seconds("timestamp", current_time - start_time)
                 
@@ -349,6 +467,21 @@ class ICARM:
         except KeyboardInterrupt:
             print("\n\nStopping position monitoring...")
         finally:
+            # Save CSV data if enabled
+            if save_csv and csv_data:
+                try:
+                    import csv
+                    with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
+                        if csv_data:
+                            fieldnames = csv_data[0].keys()
+                            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                            writer.writeheader()
+                            writer.writerows(csv_data)
+                    print(f"\n✓ CSV数据已保存到: {csv_filename}")
+                    print(f"  总共记录了 {len(csv_data)} 个数据点")
+                except Exception as e:
+                    print(f"\n✗ CSV保存失败: {e}")
+            
             # Disable motors for safety
             self.disable_all_motors()
             print("Position monitoring stopped.")
@@ -520,7 +653,7 @@ class ICARM:
         执行轨迹
         
         Args:
-            trajectory: 轨迹点列表
+            trajectory: 轨迹点列表, input degree
             verbose: 是否打印详细信息
         """
         print("开始执行轨迹...")
@@ -549,22 +682,23 @@ class ICARM:
                             target_rad = math.radians(target_deg)
                             # 使用每个电机的个性化参数
                             motor_params = motor_config[motor_name]
-                            kp = motor_params['kp']
-                            kd = motor_params['kd']
+                            # kp = motor_params['kp']
+                            # kd = motor_params['kd']
                             torque = motor_params['torque']
+                            self.set_position(motor_name, target_rad, 0, torque=torque)
                             # 使用MIT控制模式：位置控制
-                            self.mc.controlMIT(motor, kp, kd, target_rad, 0.0, torque)
+                            # self.mc.controlMIT(motor, kp, kd, target_rad, 0.0, torque)
                         except Exception as e:
                             if verbose:
                                 print(f"警告: 电机 {motor_name} 设置失败: {e}")
                 
                 # 打印进度
-                if verbose and i % 10 == 0:  # 每10个点打印一次
-                    progress = (i / len(trajectory)) * 100
-                    current_pos = self.get_current_positions_deg()
-                    print(f"进度: {progress:.1f}% | 目标: {[f'{p:.1f}' for p in target_positions]} | "
-                          f"实际: {[f'{p:.1f}' for p in current_pos]}")
-        
+                # if verbose and i % 10 == 0:  # 每10个点打印一次
+                #     progress = (i / len(trajectory)) * 100
+                #     current_pos = self.get_current_positions_deg()
+                #     print(f"进度: {progress:.1f}% | 目标: {[f'{p:.1f}' for p in target_positions]} | "
+                #           f"实际: {[f'{p:.1f}' for p in current_pos]}")
+                #
         except KeyboardInterrupt:
             print("\n运动被中断")
         
