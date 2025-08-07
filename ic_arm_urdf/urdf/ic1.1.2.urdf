@@ -144,7 +144,7 @@
 		type="continuous">
 		<origin
 			xyz="-0.29856 0.0020693 0.21104"
-			rpy="1.5708 0. 1.4647" />
+			rpy="1.5708 0. 1.6047" />
 		<parent
 			link="base_link" />
 		<child
