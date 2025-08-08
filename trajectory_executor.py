@@ -164,7 +164,7 @@ class TrajectoryExecutor:
             debug_print(f"详细错误: {traceback.format_exc()}", 'ERROR')
             raise
         
-        # 数据采集缓冲区
+        # 数据采集缓冲区（保持兼容性）
         self.data_buffer = {
             'time': deque(),
             'positions': deque(),
@@ -176,6 +176,11 @@ class TrajectoryExecutor:
             'motor_currents': deque(),
             'motor_torques': deque()
         }
+        
+        # 预分配数组缓冲区（用于高性能数据采集）
+        self.preallocated_buffer = None
+        self.buffer_index = 0
+        self.use_preallocation = False
         
        
         # 安全限制
@@ -408,17 +413,21 @@ class TrajectoryExecutor:
         self.is_executing = True
         self.emergency_stop = False
         
-        # 清空数据缓冲区
-        if record_data:
-            for key in self.data_buffer:
-                self.data_buffer[key].clear()
-            debug_print("数据缓冲区已清空")
-        
         # 准备轨迹数据
         time_points = trajectory['time']
         target_positions = trajectory['positions']  # 弧度
         target_velocities = trajectory['velocities']
         target_accelerations = trajectory['accelerations']
+        
+        # 初始化数据缓冲区
+        if record_data:
+            # 初始化预分配缓冲区（高性能模式）
+            self._init_preallocated_buffer(len(time_points))
+            
+            # 清空传统数据缓冲区（保持兼容性）
+            for key in self.data_buffer:
+                self.data_buffer[key].clear()
+            debug_print("数据缓冲区已初始化")
         
         debug_print(f"轨迹点数: {len(time_points)}, 持续时间: {time_points[-1]:.2f}s")
         
@@ -505,33 +514,79 @@ class TrajectoryExecutor:
             debug_print("轨迹执行结束")
         
         # 返回采集的数据
-        if record_data and len(self.data_buffer['time']) > 0:
-            return self._convert_buffer_to_dataframe()
+        if record_data:
+            # 检查是否有数据采集（支持预分配和传统模式）
+            has_data = False
+            if self.use_preallocation and self.preallocated_buffer is not None:
+                has_data = self.buffer_index > 0
+                debug_print(f"预分配模式数据检查: {self.buffer_index} 个数据点")
+            else:
+                has_data = len(self.data_buffer['time']) > 0
+                debug_print(f"传统模式数据检查: {len(self.data_buffer['time'])} 个数据点")
+            
+            if has_data:
+                return self._convert_buffer_to_dataframe()
+            else:
+                debug_print("无数据采集或数据为空", 'WARNING')
+                return None
         else:
-            debug_print("无数据采集或数据为空", 'WARNING')
+            debug_print("未启用数据记录")
             return None
+    
+    def _init_preallocated_buffer(self, trajectory_length: int):
+        """初始化预分配数组缓冲区"""
+        debug_print(f"初始化预分配缓冲区，长度: {trajectory_length}")
+        try:
+            self.preallocated_buffer = {
+                'time': np.zeros(trajectory_length, dtype=np.float64),
+                'target_positions': np.zeros((trajectory_length, 5), dtype=np.float64),
+                'target_velocities': np.zeros((trajectory_length, 5), dtype=np.float64),
+                'target_accelerations': np.zeros((trajectory_length, 5), dtype=np.float64),
+                'positions': np.zeros((trajectory_length, 5), dtype=np.float64),
+                'velocities': np.zeros((trajectory_length, 5), dtype=np.float64),
+                'accelerations': np.zeros((trajectory_length, 5), dtype=np.float64),
+                'motor_currents': np.zeros((trajectory_length, 5), dtype=np.float64),
+                'motor_torques': np.zeros((trajectory_length, 5), dtype=np.float64)
+            }
+            self.buffer_index = 0
+            self.use_preallocation = True
+            debug_print("✓ 预分配缓冲区初始化成功")
+        except Exception as e:
+            debug_print(f"预分配缓冲区初始化失败: {e}", 'ERROR')
+            self.use_preallocation = False
     
     def _save_trajectory_point_data(self, index: int, current_time: float, 
                                    target_pos: np.ndarray, target_vel: np.ndarray, 
                                    target_acc: np.ndarray, current_state: Dict):
-        """超快速数据保存，最小化copy和调试输出"""
+        """优化的数据保存方法 - 支持预分配和传统模式"""
         try:
-            # 保存时间和目标数据（已经是copy的）
-            self.data_buffer['time'].append(current_time)
-            self.data_buffer['target_positions'].append(target_pos)
-            self.data_buffer['target_velocities'].append(target_vel)
-            self.data_buffer['target_accelerations'].append(target_acc)
-            
-            # 保存实际数据（已经是copy的，再次copy保证数据安全）
-            self.data_buffer['positions'].append(current_state['positions'])
-            self.data_buffer['velocities'].append(current_state['velocities'])
-            self.data_buffer['accelerations'].append(current_state['accelerations'])
-            self.data_buffer['motor_currents'].append(current_state['currents'])
-            self.data_buffer['motor_torques'].append(current_state['torques'])
-            
-            # 大幅减少调试输出频率（从每50个点→每1000个点）
-            # if self.debug and index % 1000 == 0:
-            #     debug_print(f"    数据点 {index} 已保存")
+            if self.use_preallocation and self.preallocated_buffer is not None:
+                # 使用预分配数组 - 超高性能模式
+                idx = self.buffer_index
+                if idx < len(self.preallocated_buffer['time']):
+                    self.preallocated_buffer['time'][idx] = current_time
+                    self.preallocated_buffer['target_positions'][idx] = target_pos
+                    self.preallocated_buffer['target_velocities'][idx] = target_vel
+                    self.preallocated_buffer['target_accelerations'][idx] = target_acc
+                    self.preallocated_buffer['positions'][idx] = current_state['positions']
+                    self.preallocated_buffer['velocities'][idx] = current_state['velocities']
+                    self.preallocated_buffer['accelerations'][idx] = current_state['accelerations']
+                    self.preallocated_buffer['motor_currents'][idx] = current_state['currents']
+                    self.preallocated_buffer['motor_torques'][idx] = current_state['torques']
+                    self.buffer_index += 1
+                else:
+                    debug_print(f"预分配缓冲区已满，索引: {idx}", 'WARNING')
+            else:
+                # 传统deque模式 - 兼容性保证
+                self.data_buffer['time'].append(current_time)
+                self.data_buffer['target_positions'].append(target_pos)
+                self.data_buffer['target_velocities'].append(target_vel)
+                self.data_buffer['target_accelerations'].append(target_acc)
+                self.data_buffer['positions'].append(current_state['positions'])
+                self.data_buffer['velocities'].append(current_state['velocities'])
+                self.data_buffer['accelerations'].append(current_state['accelerations'])
+                self.data_buffer['motor_currents'].append(current_state['currents'])
+                self.data_buffer['motor_torques'].append(current_state['torques'])
                 
         except Exception as e:
             # 只在真正出错时才输出
@@ -544,20 +599,6 @@ class TrajectoryExecutor:
         
         if not record_data:
             debug_print("模拟模式不记录数据")
-            return None
-        
-        time_points = trajectory['time']
-        target_positions = trajectory['positions']
-        target_velocities = trajectory['velocities']
-        target_accelerations = trajectory['accelerations']
-        
-        # 清空数据缓冲区
-        for key in self.data_buffer:
-            self.data_buffer[key].clear()
-        
-        # 模拟数据采集
-        for i in range(len(time_points)):
-            current_state = self._get_simulated_state()
             # 模拟一些变化
             current_state['positions'] = target_positions[i] + np.random.normal(0, 0.01, 5)
             
@@ -570,34 +611,60 @@ class TrajectoryExecutor:
         return self._convert_buffer_to_dataframe()
     
     def _convert_buffer_to_dataframe(self) -> pd.DataFrame:
-        """将数据缓冲区转换为DataFrame"""
+        """将数据缓冲区转换为DataFrame - 支持预分配和传统模式"""
         if self.debug:
             debug_print("转换数据缓冲区为DataFrame...")
         
         try:
             data_dict = {}
             
-            # 时间
-            data_dict['time'] = list(self.data_buffer['time'])
-            
-            # 位置、速度、加速度数据
-            for motor_idx in range(5):
-                motor_name = f'm{motor_idx + 1}'
+            if self.use_preallocation and self.preallocated_buffer is not None:
+                # 使用预分配数组数据
+                actual_length = self.buffer_index
+                debug_print(f"使用预分配数据，实际长度: {actual_length}")
                 
-                # 实际数据
-                data_dict[f'{motor_name}_pos_actual'] = [float(pos[motor_idx]) for pos in self.data_buffer['positions']]
-                data_dict[f'{motor_name}_vel_actual'] = [float(vel[motor_idx]) for vel in self.data_buffer['velocities']]
-                data_dict[f'{motor_name}_acc_actual'] = [float(acc[motor_idx]) for acc in self.data_buffer['accelerations']]
-                data_dict[f'{motor_name}_current'] = [float(curr[motor_idx]) for curr in self.data_buffer['motor_currents']]
-                data_dict[f'{motor_name}_torque'] = [float(torque[motor_idx]) for torque in self.data_buffer['motor_torques']]
+                # 时间
+                data_dict['time'] = self.preallocated_buffer['time'][:actual_length].tolist()
                 
-                # 目标数据
-                data_dict[f'{motor_name}_pos_target'] = [float(pos[motor_idx]) for pos in self.data_buffer['target_positions']]
-                data_dict[f'{motor_name}_vel_target'] = [float(vel[motor_idx]) for vel in self.data_buffer['target_velocities']]
-                data_dict[f'{motor_name}_acc_target'] = [float(acc[motor_idx]) for acc in self.data_buffer['target_accelerations']]
+                # 位置、速度、加速度数据
+                for motor_idx in range(5):
+                    motor_name = f'm{motor_idx + 1}'
+                    
+                    # 实际数据
+                    data_dict[f'{motor_name}_pos_actual'] = self.preallocated_buffer['positions'][:actual_length, motor_idx].tolist()
+                    data_dict[f'{motor_name}_vel_actual'] = self.preallocated_buffer['velocities'][:actual_length, motor_idx].tolist()
+                    data_dict[f'{motor_name}_acc_actual'] = self.preallocated_buffer['accelerations'][:actual_length, motor_idx].tolist()
+                    data_dict[f'{motor_name}_current'] = self.preallocated_buffer['motor_currents'][:actual_length, motor_idx].tolist()
+                    data_dict[f'{motor_name}_torque'] = self.preallocated_buffer['motor_torques'][:actual_length, motor_idx].tolist()
+                    
+                    # 目标数据
+                    data_dict[f'{motor_name}_pos_target'] = self.preallocated_buffer['target_positions'][:actual_length, motor_idx].tolist()
+                    data_dict[f'{motor_name}_vel_target'] = self.preallocated_buffer['target_velocities'][:actual_length, motor_idx].tolist()
+                    data_dict[f'{motor_name}_acc_target'] = self.preallocated_buffer['target_accelerations'][:actual_length, motor_idx].tolist()
+            else:
+                # 使用传统deque数据
+                debug_print("使用传统数据缓冲区")
+                
+                # 时间
+                data_dict['time'] = list(self.data_buffer['time'])
+                
+                # 位置、速度、加速度数据
+                for motor_idx in range(5):
+                    motor_name = f'm{motor_idx + 1}'
+                    
+                    # 实际数据
+                    data_dict[f'{motor_name}_pos_actual'] = [float(pos[motor_idx]) for pos in self.data_buffer['positions']]
+                    data_dict[f'{motor_name}_vel_actual'] = [float(vel[motor_idx]) for vel in self.data_buffer['velocities']]
+                    data_dict[f'{motor_name}_acc_actual'] = [float(acc[motor_idx]) for acc in self.data_buffer['accelerations']]
+                    data_dict[f'{motor_name}_current'] = [float(curr[motor_idx]) for curr in self.data_buffer['motor_currents']]
+                    data_dict[f'{motor_name}_torque'] = [float(torque[motor_idx]) for torque in self.data_buffer['motor_torques']]
+                    
+                    # 目标数据
+                    data_dict[f'{motor_name}_pos_target'] = [float(pos[motor_idx]) for pos in self.data_buffer['target_positions']]
+                    data_dict[f'{motor_name}_vel_target'] = [float(vel[motor_idx]) for vel in self.data_buffer['target_velocities']]
+                    data_dict[f'{motor_name}_acc_target'] = [float(acc[motor_idx]) for acc in self.data_buffer['target_accelerations']]
             
             df = pd.DataFrame(data_dict)
-
             debug_print(f"✓ 数据转换完成，共 {len(df)} 个数据点")
             return df
             
