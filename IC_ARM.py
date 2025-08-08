@@ -1,64 +1,684 @@
-import math 
-from DM_CAN import *
-import serial
+#!/usr/bin/env python3
+"""
+IC_ARM 重构版本 - 提供清晰的读写分离和统一状态管理
+增强调试友好性：类型检查、详细报错、日志输出
+"""
+
 import time
-import rerun as rr
+import math
 import numpy as np
+import traceback
+import logging
+from typing import Dict, List, Optional, Tuple, Any, Union
+import serial
+# DM_CAN imports
+from DM_CAN import DM_Motor_Type, MotorControl, Motor
+
 # motor_config = {
 #     'm1': {'type': DM_Motor_Type.DM4340, 'id': 0x01, 'master_id': 0x00, 'kp': 60, 'kd': 1.5, 'torque': 0},
 #     'm2': {'type': DM_Motor_Type.DM4340, 'id': 0x02, 'master_id': 0x00, 'kp': 45, 'kd': 1.5, 'torque': 0.},
 #     'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 40, 'kd': 1.5, 'torque': 0.5},
 #     'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 38, 'kd': 1.5, 'torque': 0.0},
 #     'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 35, 'kd': 1.5, 'torque': 0.5},
-#     }
+# }
 motor_config = {
-    'm1': {'type': DM_Motor_Type.DM4340, 'id': 0x01, 'master_id': 0x00, 'kp': 00, 'kd': 0, 'torque': 0},
-    'm2': {'type': DM_Motor_Type.DM4340, 'id': 0x02, 'master_id': 0x00, 'kp': 45, 'kd': 1.5, 'torque': 0.},
-    'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 40, 'kd': 1.5, 'torque': 0.5},
-    'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 38, 'kd': 1.5, 'torque': 0.0},
-    'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 35, 'kd': 1.5, 'torque': 0.5},
-    }
+    'm1': {'type': DM_Motor_Type.DM4340, 'id': 0x01, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
+    'm2': {'type': DM_Motor_Type.DM4340, 'id': 0x02, 'master_id': 0x00, 'kp': 45, 'kd': 1.5, 'torque': 0},
+    'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 40, 'kd': 1.5, 'torque': 0},
+    'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 38, 'kd': 1.5, 'torque': 0},
+    'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 40, 'kd': 1.5, 'torque': 0},
+}
 
+# ===== 辅助函数定义 =====
 
+def debug_print(message: str, level: str = 'INFO'):
+    """调试输出函数"""
+    timestamp = time.strftime('%H:%M:%S')
+    print(f"[{timestamp}] [{level}] {message}")
+
+def safe_call(func, *args, **kwargs) -> Tuple[Any, Optional[str]]:
+    """安全函数调用，返回(结果, 错误信息)"""
+    try:
+        result = func(*args, **kwargs)
+        return result, None
+    except Exception as e:
+        error_msg = f"{func.__name__}() 失败: {str(e)}"
+        debug_print(f"安全调用失败: {error_msg}", 'ERROR')
+        debug_print(f"详细错误: {traceback.format_exc()}", 'ERROR')
+        return None, error_msg
+
+def validate_type(value: Any, expected_type: Union[type, Tuple[type, ...]], name: str) -> bool:
+    """验证变量类型"""
+    if not isinstance(value, expected_type):
+        # 处理tuple类型的情况
+        if isinstance(expected_type, tuple):
+            type_names = ' or '.join([t.__name__ for t in expected_type])
+        else:
+            type_names = expected_type.__name__
+        debug_print(f"类型验证失败: {name} 期望 {type_names}, 实际 {type(value).__name__}", 'ERROR')
+        return False
+    return True
+
+def validate_array(array: np.ndarray, expected_shape: Tuple, name: str) -> bool:
+    """验证numpy数组形状"""
+    if not isinstance(array, np.ndarray):
+        debug_print(f"数组验证失败: {name} 不是numpy数组, 类型: {type(array)}", 'ERROR')
+        return False
+    if array.shape != expected_shape:
+        debug_print(f"数组形状验证失败: {name} 期望 {expected_shape}, 实际 {array.shape}", 'ERROR')
+        return False
+    return True
 
 class ICARM:
-    def __init__(self, serial_port='/dev/cu.usbmodem00000000050C1', baudrate=921600):
-        """Initialize the ICARM system with all motors"""
-        # Initialize serial connection
-        self.serial_device = serial.Serial(serial_port, baudrate, timeout=0.5)
-        self.motor_config = motor_config
-        # Initialize motor control
-        self.mc = MotorControl(self.serial_device)
+    def __init__(self, port='/dev/cu.usbmodem00000000050C1', baudrate=921600, debug=True):
+        """Initialize IC ARM with refactored interface and debug support"""
+        self.debug = debug
+        debug_print("=== 初始化IC_ARM_Refactored ===")
         
-        # Initialize all motors using motor_config parameters
-        self.motors = {}
-        for motor_name, config in motor_config.items():
-            motor = Motor(config['type'], config['id'], config['master_id'])
-            self.motors[motor_name] = motor
-        
-        # Add all motors to motor control
-        for motor_name, motor in self.motors.items():
-            self.mc.addMotor(motor)
+        try:
+            # Hardware setup
+            debug_print(f"设置硬件连接: {port}, {baudrate}")
+            self.port = port
+            self.baudrate = baudrate
             
-        print(f"ICARM initialized with {len(self.motors)} motors using motor_config parameters")
-        self.read_all_motor_info()
-        # self.read_all_angles()
+            # 验证参数
+            if not validate_type(port, str, 'port'):
+                raise ValueError(f"Invalid port type: {type(port)}")
+            if not validate_type(baudrate, int, 'baudrate'):
+                raise ValueError(f"Invalid baudrate type: {type(baudrate)}")
+            
+            # 初始化串口
+            debug_print("初始化串口连接...")
+            self.serial_device = serial.Serial(port, baudrate, timeout=0.1)
+            self.mc = MotorControl(self.serial_device)
+            debug_print("✓ 串口连接成功")
+            
+            # Motor configuration
+            self.motor_config = motor_config  # 添加motor_config属性
+            self.motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
+            self.motors = {}
+            
+            # Initialize motors
+            debug_print("初始化电机...")
+            for motor_name in self.motor_names:
+                try:
+                    config = motor_config[motor_name]
+                    debug_print(f"  配置电机 {motor_name}: {config}")
+                    motor = Motor(config['type'], config['id'], config['master_id'])
+                    self.motors[motor_name] = motor
+                    self.mc.addMotor(motor)
+                    debug_print(f"  ✓ 电机 {motor_name} 初始化成功")
+                except Exception as e:
+                    debug_print(f"  ✗ 电机 {motor_name} 初始化失败: {e}", 'ERROR')
+                    raise
+            
+            # State variables (all in radians and SI units) - 内部维护的状态变量
+            debug_print("初始化状态变量...")
+            self.q = np.zeros(5, dtype=np.float64)        # Joint positions (rad)
+            self.dq = np.zeros(5, dtype=np.float64)       # Joint velocities (rad/s)
+            self.ddq = np.zeros(5, dtype=np.float64)      # Joint accelerations (rad/s²)
+            self.tau = np.zeros(5, dtype=np.float64)      # Joint torques (N·m)
+            self.currents = np.zeros(5, dtype=np.float64) # Joint currents (A)
+            
+            # History for numerical differentiation
+            self.q_prev = np.zeros(5, dtype=np.float64)
+            self.dq_prev = np.zeros(5, dtype=np.float64)
+            self.last_update_time = time.time()
+            
+            # 验证状态变量
+            self._validate_internal_state()
+            debug_print("✓ 状态变量初始化成功")
+            
+            # Read motor info and initialize states
+            debug_print("读取电机信息并初始化状态...")
+            self._read_motor_info()
+            self._refresh_all_states()
+            debug_print("✓ IC_ARM_Refactored 初始化完成")
+            
+        except Exception as e:
+            debug_print(f"✗ 初始化失败: {e}", 'ERROR')
+            debug_print(f"详细错误: {traceback.format_exc()}", 'ERROR')
+            raise
+    
+    def _validate_internal_state(self):
+        """验证内部状态变量的完整性"""
+        state_vars = {
+            'q': self.q,
+            'dq': self.dq, 
+            'ddq': self.ddq,
+            'tau': self.tau,
+            'currents': self.currents,
+            'q_prev': self.q_prev,
+            'dq_prev': self.dq_prev
+        }
         
-        # 状态变量：位置、速度、加速度（弧度）
-        self.q = np.zeros(5)      # 关节位置 (rad)
-        self.dq = np.zeros(5)     # 关节速度 (rad/s)
-        self.ddq = np.zeros(5)    # 关节加速度 (rad/s²)
+        for name, var in state_vars.items():
+            if not validate_array(var, (5,), name):
+                raise ValueError(f"Invalid state variable {name}")
         
-        # 历史状态用于数值微分
-        self.q_prev = np.zeros(5)
-        self.dq_prev = np.zeros(5)
-        self.last_update_time = time.time()
+        debug_print("✓ 内部状态变量验证通过")
+    
+    # ========== LOW-LEVEL MOTOR READ FUNCTIONS ==========
+    # 只使用DM_CAN实际提供的API：getPosition, getVelocity, getTorque
+    
+    def _read_motor_position_raw(self, motor_name: str) -> float:
+        """Read position from a single motor (refresh first)"""
+        if self.debug:
+            debug_print(f"读取电机 {motor_name} 位置...")
         
-        # 初始化状态
-        self.update_state() 
+        # 验证参数
+        if not validate_type(motor_name, str, 'motor_name'):
+            return 0.0
+        
+        if motor_name not in self.motors:
+            debug_print(f"电机 {motor_name} 不存在于电机列表中: {list(self.motors.keys())}", 'ERROR')
+            return 0.0
+        
+        try:
+            motor = self.motors[motor_name]
+            if self.debug:
+                debug_print(f"  刷新电机 {motor_name} 状态...")
+            
+            # 安全调用刷新状态
+            result, error = safe_call(self.mc.refresh_motor_status, motor)
+            if error:
+                debug_print(f"刷新电机 {motor_name} 状态失败: {error}", 'ERROR')
+                return 0.0
+            
+            # 读取位置
+            position = motor.getPosition()
+            
+            # 验证返回值
+            if not validate_type(position, (int, float, np.float32, np.float64), f'{motor_name}_position'):
+                debug_print(f"电机 {motor_name} 返回的位置类型错误: {type(position)}, 值: {position}", 'ERROR')
+                return 0.0
+            
+            position = float(position)
+            if self.debug:
+                debug_print(f"  ✓ 电机 {motor_name} 位置: {position:.4f} rad")
+            
+            return position
+            
+        except Exception as e:
+            debug_print(f"读取电机 {motor_name} 位置失败: {e}", 'ERROR')
+            debug_print(f"详细错误: {traceback.format_exc()}", 'ERROR')
+            return 0.0
+    
+    def _read_motor_velocity_raw(self, motor_name: str) -> float:
+        """Read velocity from a single motor (refresh first)"""
+        if self.debug:
+            debug_print(f"读取电机 {motor_name} 速度...")
+        
+        # 验证参数
+        if not validate_type(motor_name, str, 'motor_name'):
+            return 0.0
+        
+        if motor_name not in self.motors:
+            debug_print(f"电机 {motor_name} 不存在", 'ERROR')
+            return 0.0
+        
+        try:
+            motor = self.motors[motor_name]
+            
+            # 安全调用刷新状态
+            result, error = safe_call(self.mc.refresh_motor_status, motor)
+            if error:
+                debug_print(f"刷新电机 {motor_name} 状态失败: {error}", 'ERROR')
+                return 0.0
+            
+            # 读取速度
+            velocity = motor.getVelocity()
+            
+            # 验证返回值
+            if not validate_type(velocity, (int, float, np.float32, np.float64), f'{motor_name}_velocity'):
+                debug_print(f"电机 {motor_name} 返回的速度类型错误: {type(velocity)}, 值: {velocity}", 'ERROR')
+                return 0.0
+            
+            velocity = float(velocity)
+            if self.debug:
+                debug_print(f"  ✓ 电机 {motor_name} 速度: {velocity:.4f} rad/s")
+            
+            return velocity
+            
+        except Exception as e:
+            debug_print(f"读取电机 {motor_name} 速度失败: {e}", 'ERROR')
+            debug_print(f"详细错误: {traceback.format_exc()}", 'ERROR')
+            return 0.0
+    
+    def _read_motor_torque_raw(self, motor_name: str) -> float:
+        """Read torque from a single motor (refresh first)"""
+        if self.debug:
+            debug_print(f"读取电机 {motor_name} 力矩...")
+        
+        # 验证参数
+        if not validate_type(motor_name, str, 'motor_name'):
+            return 0.0
+        
+        if motor_name not in self.motors:
+            debug_print(f"电机 {motor_name} 不存在", 'ERROR')
+            return 0.0
+        
+        try:
+            motor = self.motors[motor_name]
+            
+            # 安全调用刷新状态
+            result, error = safe_call(self.mc.refresh_motor_status, motor)
+            if error:
+                debug_print(f"刷新电机 {motor_name} 状态失败: {error}", 'ERROR')
+                return 0.0
+            
+            # 读取力矩
+            torque = motor.getTorque()
+            
+            # 验证返回值
+            if not validate_type(torque, (int, float, np.float32, np.float64), f'{motor_name}_torque'):
+                debug_print(f"电机 {motor_name} 返回的力矩类型错误: {type(torque)}, 值: {torque}", 'ERROR')
+                return 0.0
+            
+            torque = float(torque)
+            if self.debug:
+                debug_print(f"  ✓ 电机 {motor_name} 力矩: {torque:.4f} N·m")
+            
+            return torque
+            
+        except Exception as e:
+            debug_print(f"读取电机 {motor_name} 力矩失败: {e}", 'ERROR')
+            debug_print(f"详细错误: {traceback.format_exc()}", 'ERROR')
+            return 0.0
+    
+   
+    # ========== BATCH READ FUNCTIONS ==========
+    
+    def _read_all_positions_raw(self):
+        """Read positions from all motors"""
+        positions = np.zeros(5)
+        motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
+        
+        for i, motor_name in enumerate(motor_names):
+            if motor_name in self.motors:
+                positions[i] = self._read_motor_position_raw(motor_name)
+        
+        return positions
+    
+    def _read_all_velocities_raw(self):
+        """Read velocities from all motors"""
+        velocities = np.zeros(5)
+        motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
+        
+        for i, motor_name in enumerate(motor_names):
+            if motor_name in self.motors:
+                velocities[i] = self._read_motor_velocity_raw(motor_name)
+        
+        return velocities
+    
+    def _read_all_torques_raw(self):
+        """Read torques from all motors"""
+        torques = np.zeros(5)
+        motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
+        
+        for i, motor_name in enumerate(motor_names):
+            if motor_name in self.motors:
+                torques[i] = self._read_motor_torque_raw(motor_name)
+        
+        return torques
+    
+    def _read_all_currents_raw(self):
+        """Estimate currents from torques (DM_CAN doesn't provide direct current reading)"""
+        currents = np.zeros(5)
+        torques = self._read_all_torques_raw()
+        
+        # 估算电流（使用力矩常数，需要校准）
+        for i in range(5):
+            currents[i] = torques[i] / 0.1  # 假设力矩常数为0.1 N·m/A
+        
+        return currents
+    
+    # ========== STATE UPDATE FUNCTIONS ==========
+    
+    def _refresh_all_states(self):
+        """Refresh all motor states and update internal variables"""
+        current_time = time.time()
+        dt = current_time - self.last_update_time
+        
+        # Read current positions and copy to internal state
+        new_positions = self._read_all_positions_raw()
+        self.q = new_positions.copy()  # 复制位置信息到内部变量
+        
+        # Read current velocities from hardware and copy to internal state
+        hardware_velocities = self._read_all_velocities_raw()
+        
+        # Calculate velocities using numerical differentiation as backup
+        if dt > 0 and hasattr(self, 'q_prev'):
+            calculated_velocities = (self.q - self.q_prev) / dt
+            
+            # Use hardware velocities if available, otherwise use calculated
+            self.dq = hardware_velocities.copy()  # 复制速度信息到内部变量
+            
+            # Calculate accelerations using numerical differentiation
+            if hasattr(self, 'dq_prev'):
+                self.ddq = (self.dq - self.dq_prev) / dt  # 复制加速度信息到内部变量
+        else:
+            self.dq = hardware_velocities.copy()
+        
+        # Read torques and copy to internal state
+        self.tau = self._read_all_torques_raw().copy()  # 复制力矩信息到内部变量
+        
+        # Read currents and store (optional, for completeness)
+        self.currents = self._read_all_currents_raw().copy()  # 复制电流信息到内部变量
+        
+        # Update history for next iteration
+        self.q_prev = self.q.copy()
+        self.dq_prev = self.dq.copy()
+        self.last_update_time = current_time
+        
+        # Debug: print update confirmation (可选)
+        # print(f"State updated at {current_time:.3f}: pos={self.q[:2]}, vel={self.dq[:2]}, tau={self.tau[:2]}")
+    
+    def _refresh_all_states_fast(self):
+        """快速状态刷新，减少调试输出和不必要的操作"""
+        current_time = time.time()
+        dt = current_time - self.last_update_time
+        
+        # 快速读取位置（无调试输出）
+        for i, motor_name in enumerate(['m1', 'm2', 'm3', 'm4', 'm5']):
+            if motor_name in self.motors:
+                motor = self.motors[motor_name]
+                # 快速刷新状态
+                self.mc.refresh_motor_status(motor)
+                # 直接读取位置
+                self.q[i] = float(motor.getPosition())
+                # 直接读取速度
+                self.dq[i] = float(motor.getVelocity())
+                # 直接读取力矩
+                self.tau[i] = float(motor.getTorque())
+        
+        # 计算加速度（数值微分）
+        if dt > 0 and hasattr(self, 'dq_prev'):
+            self.ddq = (self.dq - self.dq_prev) / dt
+        
+        # 估算电流
+        self.currents = self.tau / 0.1  # 简单估算
+        
+        # 更新历史
+        self.q_prev = self.q.copy()
+        self.dq_prev = self.dq.copy()
+        self.last_update_time = current_time
+    
+    def _refresh_all_states_ultra_fast(self):
+        """优化版超快速状态刷新，避免CAN总线拥塞"""
+        current_time = time.time()
+        dt = current_time - self.last_update_time
+        
+        # 优化策略：逐个刷新但最小化操作
+        motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
+        for i, motor_name in enumerate(motor_names):
+            if motor_name in self.motors:
+                motor = self.motors[motor_name]
+                # 使用正常的刷新机制，但最小化延迟
+                self.mc.refresh_motor_status(motor)
+                # 直接访问状态变量，避免函数调用开销
+                self.q[i] = motor.state_q
+                self.dq[i] = motor.state_dq  
+                self.tau[i] = motor.state_tau
+        
+        # 最简化的加速度计算
+        if dt > 0 and hasattr(self, 'dq_prev'):
+            self.ddq = (self.dq - self.dq_prev) / dt
+        
+        # 简化电流估算
+        self.currents = self.tau * 10.0  # 快速估算，避免除法
+        
+        # 最小化历史更新
+        self.q_prev = self.q.copy()
+        self.dq_prev = self.dq.copy()
+        self.last_update_time = current_time
+    
+    # ========== PUBLIC READ INTERFACES ==========
+    
+    def get_joint_positions(self, refresh=True):
+        """Get joint positions in radians - 返回内部维护的位置状态"""
+        if refresh:
+            self._refresh_all_states()  # 更新内部状态变量
+        return self.q.copy()  # 返回内部维护的位置副本
+    
+    def get_joint_velocities(self, refresh=True):
+        """Get joint velocities in rad/s - 返回内部维护的速度状态"""
+        if refresh:
+            self._refresh_all_states()  # 更新内部状态变量
+        return self.dq.copy()  # 返回内部维护的速度副本
+    
+    def get_joint_accelerations(self, refresh=True):
+        """Get joint accelerations in rad/s² - 返回内部维护的加速度状态"""
+        if refresh:
+            self._refresh_all_states()  # 更新内部状态变量
+        return self.ddq.copy()  # 返回内部维护的加速度副本
+    
+    def get_joint_torques(self, refresh=True):
+        """Get joint torques in N·m - 返回内部维护的力矩状态"""
+        if refresh:
+            self._refresh_all_states()  # 更新内部状态变量
+        return self.tau.copy()  # 返回内部维护的力矩副本
+    
+    def get_joint_currents(self, refresh=True):
+        """Get joint currents in A - 返回内部维护的电流状态"""
+        if refresh:
+            self._refresh_all_states()  # 更新内部状态变量
+        return self.currents.copy()  # 返回内部维护的电流副本
+    
+    def get_complete_state(self) -> Dict[str, Union[np.ndarray, float]]:
+        """Get complete robot state with debug support"""
+        if self.debug:
+            debug_print("获取完整机器人状态...")
+        
+        try:
+            # 刷新所有状态
+            if self.debug:
+                debug_print("  刷新所有状态...")
+            self._refresh_all_states()
+            
+            # 验证内部状态
+            self._validate_internal_state()
+            
+            # 构建状态字典
+            state = {
+                'positions': self.q.copy(),      # rad
+                'velocities': self.dq.copy(),    # rad/s
+                'accelerations': self.ddq.copy(), # rad/s²
+                'torques': self.tau.copy(),      # N·m
+                'currents': self.currents.copy(), # A
+                'timestamp': self.last_update_time
+            }
+            
+            # 验证返回的状态
+            if self.debug:
+                debug_print("  验证返回状态...")
+                for key, value in state.items():
+                    if key == 'timestamp':
+                        if not validate_type(value, (int, float), f'state.{key}'):
+                            raise ValueError(f"Invalid timestamp type: {type(value)}")
+                    else:
+                        if not validate_array(value, (5,), f'state.{key}'):
+                            raise ValueError(f"Invalid state array {key}")
+                        debug_print(f"    {key}: {value[:2]}... (shape: {value.shape}, dtype: {value.dtype})")
+            
+            if self.debug:
+                debug_print("✓ 完整状态获取成功")
+            
+            return state
+            
+        except Exception as e:
+            debug_print(f"获取完整状态失败: {e}", 'ERROR')
+            debug_print(f"详细错误: {traceback.format_exc()}", 'ERROR')
+            
+            # 返回安全的默认状态
+            debug_print("返回安全的默认状态", 'WARNING')
+            return {
+                'positions': np.zeros(5, dtype=np.float64),
+                'velocities': np.zeros(5, dtype=np.float64),
+                'accelerations': np.zeros(5, dtype=np.float64),
+                'torques': np.zeros(5, dtype=np.float64),
+                'currents': np.zeros(5, dtype=np.float64),
+                'timestamp': time.time()
+            }
+    
+    # ========== CONVENIENCE READ FUNCTIONS ==========
+    
+    def get_positions_degrees(self, refresh=True):
+        """Get joint positions in degrees"""
+        positions_rad = self.get_joint_positions(refresh)
+        return np.degrees(positions_rad)
+    
+    def get_velocities_degrees(self, refresh=True):
+        """Get joint velocities in deg/s"""
+        velocities_rad = self.get_joint_velocities(refresh)
+        return np.degrees(velocities_rad)
+    
+    def get_single_joint_state(self, joint_index, refresh=True):
+        """Get state of a single joint (0-4)"""
+        if refresh:
+            self._refresh_all_states()
+        
+        if 0 <= joint_index < 5:
+            return {
+                'position': self.q[joint_index],
+                'velocity': self.dq[joint_index],
+                'acceleration': self.ddq[joint_index],
+                'torque': self.tau[joint_index]
+            }
+        else:
+            raise ValueError("Joint index must be 0-4")
+    
+    # ========== LOW-LEVEL WRITE FUNCTIONS ==========
+    
+    def _send_motor_command_raw(self, motor, position_rad, velocity_rad_s=0.0, torque_nm=0.0):
+        """Send command to a single motor (lowest level)"""
+        try:
+            motor_name = None
+            for name, m in self.motors.items():
+                if m == motor:
+                    motor_name = name
+                    break
+            
+            if motor_name:
+                config = self.motor_config[motor_name]
+                kp = config['kp']
+                kd = config['kd']
+                self.mc.controlMIT(motor, kp, kd, position_rad, velocity_rad_s, torque_nm)
+                return True
+            else:
+                print("Motor not found in configuration")
+                return False
+        except Exception as e:
+            print(f"Failed to send command to motor: {e}")
+            return False
+    
+    # ========== PUBLIC WRITE INTERFACES ==========
+    
+    def set_joint_position(self, joint_index, position_rad, velocity_rad_s=0.0, torque_nm=0.0):
+        """Set position of a single joint"""
+        if 0 <= joint_index < 5:
+            motor_name = self.motor_names[joint_index]
+            if motor_name in self.motors:
+                return self._send_motor_command_raw(
+                    self.motors[motor_name], 
+                    position_rad, 
+                    velocity_rad_s, 
+                    torque_nm
+                )
+        return False
+    
+    def set_joint_positions(self, positions_rad, velocities_rad_s=None, torques_nm=None):
+        """Set positions of all joints"""
+        if velocities_rad_s is None:
+            velocities_rad_s = np.zeros(5)
+        if torques_nm is None:
+            torques_nm = np.zeros(5)
+        
+        success = True
+        for i in range(min(5, len(positions_rad))):
+            result = self.set_joint_position(
+                i, 
+                positions_rad[i], 
+                velocities_rad_s[i], 
+                torques_nm[i]
+            )
+            success = success and result
+        
+        return success
+    
+    def set_joint_positions_degrees(self, positions_deg, velocities_deg_s=None, torques_nm=None):
+        """Set positions of all joints in degrees"""
+        positions_rad = np.radians(positions_deg)
+        velocities_rad_s = np.radians(velocities_deg_s) if velocities_deg_s is not None else None
+        return self.set_joint_positions(positions_rad, velocities_rad_s, torques_nm)
+    
+    # ========== MOTOR CONTROL FUNCTIONS ==========
+    
+    def enable_motor(self, joint_index):
+        """Enable a single motor"""
+        if 0 <= joint_index < 5:
+            motor_name = self.motor_names[joint_index]
+            if motor_name in self.motors and not self.motors[motor_name].isEnable:
+                try:
+                    self.mc.enable(self.motors[motor_name])
+                    self.motors[motor_name].isEnable = True
+                    print(f"Motor {motor_name} enabled")
+                    return True
+                except Exception as e:
+                    print(f"Failed to enable motor {motor_name}: {e}")
+        return False
+    
+    def disable_motor(self, joint_index):
+        """Disable a single motor"""
+        if 0 <= joint_index < 5:
+            motor_name = self.motor_names[joint_index]
+            if motor_name in self.motors and self.motors[motor_name].isEnable:
+                try:
+                    self.mc.disable(self.motors[motor_name])
+                    self.motors[motor_name].isEnable = False
+                    print(f"Motor {motor_name} disabled")
+                    return True
+                except Exception as e:
+                    print(f"Failed to disable motor {motor_name}: {e}")
+        return False
+    
+    def enable(self):
+        return self.enable_all_motors()
 
-    def read_all_motor_info(self):
-        """Read all motor information and print as a table"""
+    def disable(self):
+        return self.disable_all_motors()
+
+    def enable_all_motors(self):
+        """Enable all motors"""
+        print("Enabling all motors...")
+        success = True
+        for i in range(5):
+            result = self.enable_motor(i)
+            success = success and result
+        
+        if success:
+            print("Waiting for motors to stabilize...")
+            time.sleep(2)
+        return success
+    
+    def disable_all_motors(self):
+        """Disable all motors"""
+        print("Disabling all motors...")
+        success = True
+        for i in range(5):
+            result = self.disable_motor(i)
+            success = success and result
+        return success
+    
+    def emergency_stop(self):
+        """Emergency stop - disable all motors immediately"""
+        print("EMERGENCY STOP!")
+        return self.disable_all_motors()
+    
+    # ========== INFORMATION FUNCTIONS ==========
+    
+    def _read_motor_info(self):
+        """Read and display motor information"""
         print("\n" + "="*80)
         print("MOTOR INFORMATION TABLE")
         print("="*80)
@@ -67,7 +687,6 @@ class ICARM:
         
         for motor_name, motor in self.motors.items():
             try:
-                # Read motor parameters
                 pmax = self.mc.read_motor_param(motor, DM_variable.PMAX)
                 vmax = self.mc.read_motor_param(motor, DM_variable.VMAX)
                 tmax = self.mc.read_motor_param(motor, DM_variable.TMAX)
@@ -81,789 +700,113 @@ class ICARM:
         print("="*80)
         print()
     
-    def read_all_angles(self):
-        """Read all motor angles (positions) and print as a table"""
-        print("\n" + "="*60)
-        print("MOTOR ANGLES (POSITIONS)")
-        print("="*60)
-        print(f"{'Motor':<8} {'ID':<4} {'Angle (rad)':<15} {'Angle (deg)':<15} {'Status':<10}")
-        print("-"*60)
+    def print_current_state(self):
+        """Print current robot state"""
+        state = self.get_complete_state()
         
-        angles = {}
-        for motor_name, motor in self.motors.items():
-            try:
-                self.mc.refresh_motor_status(motor)
-                angle_rad = motor.getPosition()
-                # print(angle_rad)
-                angle_deg = math.degrees(angle_rad)
-                angles[motor_name] = angle_rad
-                status = "OK"
-            except Exception as e:
-                angle_rad = angle_deg = "ERROR"
-                status = "FAIL"
-                
-            print(f"{motor_name:<8} {motor.SlaveID:<4} {angle_rad:<15} {angle_deg:<15} {status:<10}")
+        print("\n" + "="*80)
+        print("CURRENT ROBOT STATE")
+        print("="*80)
+        print(f"{'Joint':<8} {'Pos(deg)':<12} {'Vel(deg/s)':<12} {'Acc(deg/s²)':<15} {'Torque(Nm)':<12}")
+        print("-"*80)
         
-        print("="*60)
+        for i in range(5):
+            print(f"m{i+1:<7} {np.degrees(state['positions'][i]):<12.2f} "
+                  f"{np.degrees(state['velocities'][i]):<12.2f} "
+                  f"{np.degrees(state['accelerations'][i]):<15.2f} "
+                  f"{state['torques'][i]:<12.3f}")
+        
+        print("="*80)
+        print(f"Timestamp: {state['timestamp']:.3f}")
         print()
-        return angles
     
-    def read_all_velocities(self):
-        """Read all motor velocities and print as a table"""
-        print("\n" + "="*60)
-        print("MOTOR VELOCITIES")
-        print("="*60)
-        print(f"{'Motor':<8} {'ID':<4} {'Velocity (rad/s)':<18} {'Velocity (rpm)':<15} {'Status':<10}")
-        print("-"*60)
-        
-        velocities = {}
-        for motor_name, motor in self.motors.items():
-            try:
-                vel_rad_s = motor.getVelocity()
-                vel_rpm = vel_rad_s * 60 / (2 * math.pi)  # Convert rad/s to rpm
-                velocities[motor_name] = vel_rad_s
-                status = "OK"
-            except Exception as e:
-                vel_rad_s = vel_rpm = "ERROR"
-                status = "FAIL"
-                
-            print(f"{motor_name:<8} {motor.SlaveID:<4} {vel_rad_s:<18} {vel_rpm:<15} {status:<10}")
-        
-        print("="*60)
-        print()
-        return velocities
+    # ========== TRAJECTORY EXECUTION ==========
     
-    def read_all_currents(self):
-        """Read all motor currents (torques) and print as a table"""
-        # print("\n" + "="*60)
-        # print("MOTOR CURRENTS (TORQUES)")
-        # print("="*60)
-        # print(f"{'Motor':<8} {'ID':<4} {'Torque (Nm)':<15} {'Status':<10}")
-        # print("-"*60)
-        
-        currents = {}
-        for motor_name, motor in self.motors.items():
-            try:
-                torque = motor.getTorque()
-                currents[motor_name] = torque
-                status = "OK"
-            except Exception as e:
-                torque = "ERROR"
-                status = "FAIL"
-                
-            # print(f"{motor_name:<8} {motor.SlaveID:<4} {torque:<15} {status:<10}")
-            #
-        # print("="*60)
-        # print()
-        return currents
-    
-    def enable_all_motors(self):
-        """Enable all motors"""
-        print("\nEnabling all motors...")
-        for motor_name, motor in self.motors.items():
-            try:
-                self.mc.enable(motor)
-                motor.isEnable = True
-                print(f"Motor {motor_name} enabled successfully")
-            except Exception as e:
-                print(f"Failed to enable motor {motor_name}: {e}")
-        print("Waiting for motors to stabilize...")
-        time.sleep(1)  # Wait for motors to stabilize
-    
-    def disable_all_motors(self):
-        """Disable all motors"""
-        print("\nDisabling all motors...")
-        for motor_name, motor in self.motors.items():
-            try:
-                self.mc.disable(motor)
-                motor.isEnable = False
-                print(f"Motor {motor_name} disabled successfully")
-            except Exception as e:
-                print(f"Failed to disable motor {motor_name}: {e}")
-    
-    def test_motor_communication(self):
-        """Test motor communication by enabling motors and reading positions"""
-        print("\n" + "="*70)
-        print("TESTING MOTOR COMMUNICATION")
-        print("="*70)
-        
-        # Enable all motors first
-        self.enable_all_motors()
-        
-        
-        # Now read positions
-        print("\nReading positions after enabling and commanding:")
-        angles = self.read_all_angles()
-        
-       
-        return angles
-    
-    # ========== CONTROL API FUNCTIONS (Basic Implementation) ==========
-    
-    def set_motor(self, motor_name, pos, vel, tor, kp=None, kd=None):
-        motor = self.motors[motor_name]
-        
-        kp , kd = self.motor_config[motor_name]['kp'] if not kp else kp, self.motor_config[motor_name]['kd'] if not kd else kd
-        self.mc.controlMIT(motor,kp, kd, pos, vel, tor)
-        return
-
-    def enable_motor(self, motor_name):
-        """Enable a specific motor"""
-        if motor_name in self.motors:
-            motor = self.motors[motor_name]
-            self.mc.enable(motor)
-            print(f"Enabling motor {motor_name}")
-        else:
-            print(f"Motor {motor_name} not found")
-    
-    def disable_motor(self, motor_name):
-        """Disable a specific motor"""
-        if motor_name in self.motors:
-            motor = self.motors[motor_name]
-            self.mc.disable(motor)
-        else:
-            print(f"Motor {motor_name} not found")
-    
-    def set_position(self, motor_name, position, velocity=None, torque=None):
-        """Set motor position with optional velocity and torque limits"""
-        if motor_name in self.motors:
-            self.set_motor(motor_name, position, velocity, torque)
-            # print(f"Setting {motor_name} position to {position}")
-        else:
-            print(f"Motor {motor_name} not found")
-    
-    # def set_velocity(self, motor_name, velocity, torque=None):
-    #     """Set motor velocity with optional torque limit"""
-    #     if motor_name in self.motors:
-    #         motor = self.motors[motor_name]
-    #         #
-    #         self.set_motor(motor_name, , velocity, torque)
-    #         # TODO: Implement velocity control
-    #         print(f"Setting {motor_name} velocity to {velocity}")
-    #     else:
-    #         print(f"Motor {motor_name} not found")
-    #
-    def set_torque(self, motor_name, torque):
-        """Set motor torque"""
-        if motor_name in self.motors:
-            motor = self.motors[motor_name]
-            self.set_motor(motor_name, 0, 0, torque, kp=0, kd=0)
-            # print(f"Setting {motor_name} torque to {torque}")
-        else:
-            print(f"Motor {motor_name} not found")
-    
-    def get_motor_state(self, motor_name):
-        """Get current motor state (position, velocity, torque)"""
-        if motor_name in self.motors:
-            motor = self.motors[motor_name]
-            # TODO: Implement state reading
-            print(f"Reading {motor_name} state")
-            return {'position': 0, 'velocity': 0, 'torque': 0}  # Placeholder
-        else:
-            print(f"Motor {motor_name} not found")
-            return None
-    
-    def emergency_stop(self):
-        """Emergency stop all motors"""
-        print("EMERGENCY STOP - Disabling all motors")
-        for motor_name in self.motors:
-            self.disable_motor(motor_name)
-    
-    def get_positions_only(self):
-        """Get only the positions of all motors without printing"""
-        positions = {}
-        for motor_name, motor in self.motors.items():
-            try:
-                # First refresh motor status to get latest data
-                self.mc.refresh_motor_status(motor)
-                # Then read the position
-                angle_rad = motor.getPosition()
-                # print(f'{motor_name} angle_rad ', angle_rad)
-                # angle_deg = angle_rad * 180 / 3.14
-                angle_deg = math.degrees(angle_rad)
-                positions[motor_name] = {
-                    'rad': angle_rad,
-                    'deg': angle_deg,
-                    'id': motor.SlaveID
-                }
-            except Exception as e:
-                positions[motor_name] = {
-                    'rad': None,
-                    'deg': None,
-                    'id': motor.SlaveID,
-                    'error': str(e)
-                }
-        return positions
-    
-    def update_state(self):
-        """更新机器人状态（位置、速度、加速度）"""
-        current_time = time.time()
-        dt = current_time - self.last_update_time
-        
-        # 获取当前位置
-        try:
-            positions_data = self.get_positions_only()
-            if positions_data:
-                # 更新位置（转换为弧度）
-                for i, pos_data in enumerate(positions_data[:5]):
-                    if isinstance(pos_data, dict) and 'deg' in pos_data:
-                        self.q[i] = math.radians(pos_data['deg'])
-                    elif isinstance(pos_data, (int, float)):
-                        self.q[i] = math.radians(pos_data)
-                
-                # 计算速度（数值微分）
-                if dt > 0:
-                    self.dq = (self.q - self.q_prev) / dt
-                    # 计算加速度（二阶微分）
-                    self.ddq = (self.dq - self.dq_prev) / dt
-                
-                # 更新历史状态
-                self.q_prev = self.q.copy()
-                self.dq_prev = self.dq.copy()
-                self.last_update_time = current_time
-                
-        except Exception as e:
-            print(f"状态更新失败: {e}")
-    
-    def get_joint_positions(self, update=True):
-        """获取关节位置（弧度）"""
-        if update:
-            self.update_state()
-        return self.q.copy()
-    
-    def get_joint_velocities(self, update=True):
-        """获取关节速度（弧度/秒）"""
-        if update:
-            self.update_state()
-        return self.dq.copy()
-    
-    def get_joint_accelerations(self, update=True):
-        """获取关节加速度（弧度/秒²）"""
-        if update:
-            self.update_state()
-        return self.ddq.copy()
-    
-    def get_joint_torques(self):
-        """获取关节力矩（N·m）"""
-        try:
-            currents_dict = self.read_all_currents()
-            torques = np.zeros(5)
-            motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
-            
-            for i, motor_name in enumerate(motor_names):
-                if motor_name in currents_dict:
-                    torque_val = currents_dict[motor_name]
-                    if isinstance(torque_val, (int, float)):
-                        torques[i] = float(torque_val)
-            
-            return torques
-        except Exception as e:
-            print(f"获取力矩失败: {e}")
-            return np.zeros(5)
-    
-    def get_complete_state(self):
-        """获取完整的机器人状态"""
-        self.update_state()
-        return {
-            'positions': self.get_joint_positions(update=False),     # rad
-            'velocities': self.get_joint_velocities(update=False),   # rad/s
-            'accelerations': self.get_joint_accelerations(update=False), # rad/s²
-            'torques': self.get_joint_torques(),                     # N·m
-            'timestamp': self.last_update_time
-        }
-    
-    def monitor_positions_continuous(self, update_rate=10.0, duration=None, save_csv=False, csv_filename=None):
-        """Continuously monitor and display motor positions using rerun
-        
-        Args:
-            update_rate: Updates per second (Hz)
-            duration: Duration in seconds (None for infinite)
-            save_csv: Whether to save data to CSV file
-            csv_filename: CSV filename (auto-generated if None)
-        """
-        # Initialize rerun
-        rr.init("ICARM_Position_Monitor", spawn=True)
-        
-        # CSV setup
-        csv_data = []
-        if save_csv:
-            import csv
-            from datetime import datetime
-            if csv_filename is None:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                csv_filename = f"icarm_positions_{timestamp}.csv"
-            print(f"CSV保存已启用，文件: {csv_filename}")
-        
-        print("Starting continuous position monitoring...")
-        print("Press Ctrl+C to stop")
-        if save_csv:
-            print(f"数据将保存到: {csv_filename}")
-        
-        # Enable all motors first
-        self.enable_all_motors()
-        
-        start_time = time.time()
-        update_interval = 1.0 / update_rate
-        
-        try:
-            while True:
-                current_time = time.time()
-                
-                # Check duration limit
-                if duration and (current_time - start_time) > duration:
-                    break
-                
-                # Get positions
-                positions = self.get_positions_only()
-                
-                # CSV data collection
-                if save_csv:
-                    elapsed_time = current_time - start_time
-                    unix_timestamp = int(current_time * 1000)  # Unix时间戳（毫秒）
-                    csv_row = {
-                        'timestamp': elapsed_time,
-                        'unix_timestamp': unix_timestamp,
-                        'datetime': time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(current_time))
-                    }
-                    for motor_name, pos_data in positions.items():
-                        csv_row[f'{motor_name}_deg'] = pos_data['deg'] if pos_data['deg'] is not None else 0.0
-                        csv_row[f'{motor_name}_rad'] = pos_data['rad'] if pos_data['rad'] is not None else 0.0
-                        csv_row[f'{motor_name}_id'] = pos_data['id']
-                    csv_data.append(csv_row)
-                
-                # Log to rerun
-                rr.set_time_seconds("timestamp", current_time - start_time)
-                
-                # Create arrays for plotting
-                motor_names = list(positions.keys())
-                angles_deg = []
-                motor_ids = []
-                
-                for motor_name in motor_names:
-                    pos_data = positions[motor_name]
-                    if pos_data['deg'] is not None:
-                        angles_deg.append(pos_data['deg'])
-                        motor_ids.append(pos_data['id'])
-                        
-                        # Log individual motor position
-                        rr.log(f"motors/{motor_name}/position_deg", rr.Scalars(float(pos_data['deg'])))
-                    else:
-                        angles_deg.append(0.0)
-                        motor_ids.append(pos_data['id'])
-                
-                # Log combined data as time series
-                if angles_deg:
-                    for i, motor_name in enumerate(motor_names):
-                        rr.log(f"overview/motor_{motor_name}_deg", rr.Scalars(float(angles_deg[i])))
-                
-                # Print to console (compact format)
-                pos_str = " | ".join([f"{name}: {positions[name]['deg']:.2f}°" 
-                                     for name in motor_names if positions[name]['deg'] is not None])
-                print(f"\r{pos_str}", end="", flush=True)
-                
-                # Wait for next update
-                time.sleep(update_interval)
-                
-        except KeyboardInterrupt:
-            print("\n\nStopping position monitoring...")
-        finally:
-            # Save CSV data if enabled
-            if save_csv and csv_data:
-                try:
-                    import csv
-                    with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
-                        if csv_data:
-                            fieldnames = csv_data[0].keys()
-                            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                            writer.writeheader()
-                            writer.writerows(csv_data)
-                    print(f"\n✓ CSV数据已保存到: {csv_filename}")
-                    print(f"  总共记录了 {len(csv_data)} 个数据点")
-                except Exception as e:
-                    print(f"\n✗ CSV保存失败: {e}")
-            
-            # Disable motors for safety
-            self.disable_all_motors()
-            print("Position monitoring stopped.")
-    
-    def set_all_zero_positions(self):
-        """Set current positions of all motors as new zero positions
-        
-        This function should be called when the arm is in the desired zero position.
-        All motors will be disabled first, then their current positions will be set as zero.
-        """
-        print("Setting current positions as zero for all motors...")
-        print("WARNING: This will change the zero reference for all motors!")
-        
-        # Confirm with user
-        confirm = input("Are you sure you want to set current positions as zero? (y/N): ")
-        if confirm.lower() != 'y':
-            print("Operation cancelled.")
+    def execute_trajectory_points(self, trajectory_points, verbose=True):
+        """Execute a trajectory given as a list of points"""
+        if not trajectory_points:
+            print("Empty trajectory")
             return False
         
-        # First, read and display current positions
-        print("\nCurrent positions before setting zero:")
-        current_positions = self.get_positions_only()
-        for motor_name, pos_data in current_positions.items():
-            if pos_data['deg'] is not None:
-                print(f"{motor_name}: {pos_data['deg']:.2f}°")
-        
-        # Disable all motors first (required for setting zero position)
-        print("\nDisabling all motors...")
-        self.disable_all_motors()
-        
-        # Set zero position for each motor
-        success_count = 0
-        for motor_name, motor in self.motors.items():
-            try:
-                print(f"Setting zero position for {motor_name}...")
-                self.mc.set_zero_position(motor)
-                success_count += 1
-                print(f"✓ {motor_name} zero position set successfully")
-            except Exception as e:
-                print(f"✗ Failed to set zero position for {motor_name}: {e}")
-        
-        print(f"\nZero position setting completed: {success_count}/{len(self.motors)} motors successful")
-        
-        # Verify new positions (should be close to zero)
-        print("\nVerifying new zero positions:")
-        time.sleep(1)  # Wait a moment for the changes to take effect
-        new_positions = self.get_positions_only()
-        for motor_name, pos_data in new_positions.items():
-            if pos_data['deg'] is not None:
-                print(f"{motor_name}: {pos_data['deg']:.2f}°")
-        
-        return success_count == len(self.motors)
-    
-    def set_single_zero_position(self, motor_name):
-        """Set current position of a single motor as new zero position
-        
-        Args:
-            motor_name: Name of the motor (e.g., 'm1', 'm2', etc.)
-        """
-        if motor_name not in self.motors:
-            print(f"Error: Motor {motor_name} not found")
-            return False
-        
-        motor = self.motors[motor_name]
-        
-        print(f"Setting current position as zero for {motor_name}...")
-        
-        # Read current position
-        current_pos = self.get_positions_only()[motor_name]
-        if current_pos['deg'] is not None:
-            print(f"Current position: {current_pos['deg']:.2f}°")
-        
-        # Confirm with user
-        confirm = input(f"Set current position as zero for {motor_name}? (y/N): ")
-        if confirm.lower() != 'y':
-            print("Operation cancelled.")
-            return False
-        
-        # Disable motor first
-        print(f"Disabling {motor_name}...")
-        self.disable_motor(motor_name)
-        
-        try:
-            # Set zero position
-            self.mc.set_zero_position(motor)
-            print(f"✓ {motor_name} zero position set successfully")
-            
-            # Verify
-            time.sleep(1)
-            new_pos = self.get_positions_only()[motor_name]
-            if new_pos['deg'] is not None:
-                print(f"New position: {new_pos['deg']:.2f}°")
-            
-            return True
-        except Exception as e:
-            print(f"✗ Failed to set zero position for {motor_name}: {e}")
-            return False
-    
-    def get_current_positions_deg(self):
-        """获取当前位置（度）"""
-        positions = self.get_positions_only()
-        return [positions[f'm{i+1}']['deg'] for i in range(5)]
-    
-    def linear_interpolation(self, start_pos, end_pos, duration, update_rate=50):
-        """
-        线性插值生成轨迹点
-        
-        Args:
-            start_pos: 起始位置列表 [j1, j2, j3, j4, j5] (度)
-            end_pos: 结束位置列表 [j1, j2, j3, j4, j5] (度)
-            duration: 运动时间 (秒)
-            update_rate: 更新频率 (Hz)
-        
-        Returns:
-            trajectory: 轨迹点列表，每个点是 [j1, j2, j3, j4, j5, time]
-        """
-        num_points = int(duration * update_rate)
-        trajectory = []
-        
-        for i in range(num_points + 1):
-            t = i / num_points  # 归一化时间 [0, 1]
-            
-            # 线性插值
-            current_pos = []
-            for j in range(5):
-                pos = start_pos[j] + t * (end_pos[j] - start_pos[j])
-                current_pos.append(pos)
-            
-            time_stamp = t * duration
-            trajectory.append(current_pos + [time_stamp])
-        
-        return trajectory
-    
-    def smooth_interpolation(self, start_pos, end_pos, duration, update_rate=50):
-        """
-        平滑插值（S曲线）生成轨迹点
-        
-        Args:
-            start_pos: 起始位置列表 [j1, j2, j3, j4, j5] (度)
-            end_pos: 结束位置列表 [j1, j2, j3, j4, j5] (度)
-            duration: 运动时间 (秒)
-            update_rate: 更新频率 (Hz)
-        
-        Returns:
-            trajectory: 轨迹点列表，每个点是 [j1, j2, j3, j4, j5, time]
-        """
-        num_points = int(duration * update_rate)
-        trajectory = []
-        
-        for i in range(num_points + 1):
-            t = i / num_points  # 归一化时间 [0, 1]
-            
-            # S曲线插值 (3次多项式: 3t² - 2t³)
-            s = 3 * t**2 - 2 * t**3
-            
-            # 应用插值
-            current_pos = []
-            for j in range(5):
-                pos = start_pos[j] + s * (end_pos[j] - start_pos[j])
-                current_pos.append(pos)
-            
-            time_stamp = t * duration
-            trajectory.append(current_pos + [time_stamp])
-        
-        return trajectory
-    
-    def execute_trajectory(self, trajectory, verbose=True):
-        """
-        执行轨迹
-        
-        Args:
-            trajectory: 轨迹点列表, input degree
-            verbose: 是否打印详细信息
-        """
-        print("开始执行轨迹...")
-        
-        # 启用所有电机
+        print(f"Executing trajectory with {len(trajectory_points)} points...")
         self.enable_all_motors()
         
         start_time = time.time()
         
         try:
-            for i, point in enumerate(trajectory):
-                target_positions = point[:5]  # 前5个是关节位置
-                target_time = point[5]        # 第6个是时间戳
+            for i, point in enumerate(trajectory_points):
+                if len(point) < 6:  # Need 5 positions + 1 timestamp
+                    print(f"Invalid point at index {i}: {point}")
+                    continue
                 
-                # 等待到达目标时间
+                target_positions_deg = point[:5]
+                target_time = point[5]
+                
+                # Wait for target time
                 while (time.time() - start_time) < target_time:
-                    time.sleep(0.001)  # 1ms精度
+                    time.sleep(0.001)
                 
-                # 发送位置命令到各个电机
-                for motor_idx, target_deg in enumerate(target_positions):
-                    motor_name = f'm{motor_idx + 1}'
-                    if motor_name in self.motors:
-                        motor = self.motors[motor_name]
-                        try:
-                            # 转换为弧度
-                            target_rad = math.radians(target_deg)
-                            # 使用每个电机的个性化参数
-                            motor_params = motor_config[motor_name]
-                            # kp = motor_params['kp']
-                            # kd = motor_params['kd']
-                            torque = motor_params['torque']
-                            self.set_position(motor_name, target_rad, 0, torque=torque)
-                            # 使用MIT控制模式：位置控制
-                            # self.mc.controlMIT(motor, kp, kd, target_rad, 0.0, torque)
-                        except Exception as e:
-                            if verbose:
-                                print(f"警告: 电机 {motor_name} 设置失败: {e}")
+                # Send commands
+                self.set_joint_positions_degrees(target_positions_deg)
                 
-                # 打印进度
-                # if verbose and i % 10 == 0:  # 每10个点打印一次
-                #     progress = (i / len(trajectory)) * 100
-                #     current_pos = self.get_current_positions_deg()
-                #     print(f"进度: {progress:.1f}% | 目标: {[f'{p:.1f}' for p in target_positions]} | "
-                #           f"实际: {[f'{p:.1f}' for p in current_pos]}")
-                #
-        except KeyboardInterrupt:
-            print("\n运动被中断")
+                # Progress reporting
+                if verbose and i % 10 == 0:
+                    progress = (i / len(trajectory_points)) * 100
+                    current_pos = self.get_positions_degrees()
+                    print(f"Progress: {progress:.1f}% | Target: {[f'{p:.1f}' for p in target_positions_deg]} | "
+                          f"Actual: {[f'{p:.1f}' for p in current_pos]}")
         
+        except KeyboardInterrupt:
+            print("\nTrajectory interrupted")
+        except Exception as e:
+            print(f"Trajectory execution error: {e}")
         finally:
-            # 安全停止
-            print("停止所有电机...")
             self.disable_all_motors()
         
-        # 验证最终位置
-        final_pos = self.get_current_positions_deg()
-        print(f"\n轨迹执行完成!")
-        print(f"最终位置: {[f'{p:.2f}°' for p in final_pos]}")
-        
+        final_pos = self.get_positions_degrees()
+        print(f"Trajectory execution completed. Final position: {[f'{p:.2f}°' for p in final_pos]}")
         return final_pos
     
-    def home_to_zero(self, duration=1.0, interpolation_type='smooth'):
-        """
-        回零主函数
-        
-        Args:
-            duration: 运动时间 (秒)
-            interpolation_type: 插值类型 ('linear' 或 'smooth')
-        
-        Returns:
-            success: 是否成功回零
-        """
-        print("=== IC ARM 回零运动 ===")
-        
-        target_positions = [0.0, 0.0, 0.0, 0.0, 0.0]  # 目标零点位置（度）
-        
-        # 获取当前位置
-        print("读取当前位置...")
-        current_pos = self.get_current_positions_deg()
-        print(f"当前位置: {[f'{p:.2f}°' for p in current_pos]}")
-        print(f"目标位置: {[f'{p:.2f}°' for p in target_positions]}")
-        
-        # 计算运动距离
-        distances = [abs(current_pos[i] - target_positions[i]) for i in range(5)]
-        max_distance = max(distances)
-        print(f"最大运动距离: {max_distance:.2f}°")
-        
-        if max_distance < 1.0:
-            print("已经接近零点位置，无需回零")
-            return True
-        
-        # 生成轨迹
-        print(f"生成{interpolation_type}插值轨迹，时长{duration}秒...")
-        if interpolation_type == 'linear':
-            trajectory = self.linear_interpolation(current_pos, target_positions, duration)
-        else:
-            trajectory = self.smooth_interpolation(current_pos, target_positions, duration)
-        
-        print(f"轨迹点数: {len(trajectory)}")
-        
-        # 执行轨迹
-        final_pos = self.execute_trajectory(trajectory)
-        
-        # 计算误差
-        errors = [abs(final_pos[i] - target_positions[i]) for i in range(5)]
-        print(f"位置误差: {[f'{e:.2f}°' for e in errors]}")
-        max_error = max(errors)
-        print(f"最大误差: {max_error:.2f}°")
-        
-        success = max_error < 2.0  # 如果最大误差小于2度认为成功
-        
-        if success:
-            print("✓ 回零成功!")
-        else:
-            print("✗ 回零精度不足，可能需要调整参数")
-        
-        return success
-    
-    def move_to_position(self, target_positions, duration=2.0, interpolation_type='smooth'):
-        """
-        移动到指定位置
-        
-        Args:
-            target_positions: 目标位置列表 [j1, j2, j3, j4, j5] (度)
-            duration: 运动时间 (秒)
-            interpolation_type: 插值类型 ('linear' 或 'smooth')
-        
-        Returns:
-            success: 是否成功到达目标位置
-        """
-        print(f"=== 移动到目标位置 ===")
-        
-        # 获取当前位置
-        current_pos = self.get_current_positions_deg()
-        print(f"当前位置: {[f'{p:.2f}°' for p in current_pos]}")
-        print(f"目标位置: {[f'{p:.2f}°' for p in target_positions]}")
-        
-        # 计算运动距离
-        distances = [abs(current_pos[i] - target_positions[i]) for i in range(5)]
-        max_distance = max(distances)
-        print(f"最大运动距离: {max_distance:.2f}°")
-        
-        # 生成轨迹
-        print(f"生成{interpolation_type}插值轨迹，时长{duration}秒...")
-        if interpolation_type == 'linear':
-            trajectory = self.linear_interpolation(current_pos, target_positions, duration)
-        else:
-            trajectory = self.smooth_interpolation(current_pos, target_positions, duration)
-        
-        print(f"轨迹点数: {len(trajectory)}")
-        
-        # 执行轨迹
-        final_pos = self.execute_trajectory(trajectory)
-        
-        # 计算误差
-        errors = [abs(final_pos[i] - target_positions[i]) for i in range(5)]
-        print(f"位置误差: {[f'{e:.2f}°' for e in errors]}")
-        max_error = max(errors)
-        print(f"最大误差: {max_error:.2f}°")
-        
-        success = max_error < 3.0  # 如果最大误差小于3度认为成功
-        
-        if success:
-            print("✓ 运动成功!")
-        else:
-            print("✗ 运动精度不足，可能需要调整参数")
-        
-        return success
+    # ========== CLEANUP ==========
     
     def close(self):
-        """Close serial connection and cleanup"""
-        print("Closing ICARM connection")
-        if hasattr(self, 'serial_device') and self.serial_device.is_open:
+        """Close the connection and cleanup"""
+        try:
+            self.disable_all_motors()
             self.serial_device.close()
+            print("ICARM connection closed")
+        except Exception as e:
+            print(f"Error during cleanup: {e}")
+    
+    def __del__(self):
+        """Destructor"""
+        try:
+            self.close()
+        except:
+            pass
 
-# Example usage (uncomment to test)
+# ========== EXAMPLE USAGE ==========
 if __name__ == "__main__":
+    # Example usage
     arm = ICARM()
     
     try:
-        # Read motor information
-        arm.read_all_motor_info()
+        # Test single joint movement
+        print("Testing single joint movement...")
+        arm.enable_all_motors()
         
-        # Test motor communication (enable motors and try to get real positions)
-        print("\n" + "="*50)
-        print("TESTING MOTOR COMMUNICATION...")
-        print("="*50)
+        # Move joint 0 to 30 degrees
+        # arm.set_joint_positions_degrees([30, 0, 0, 0, 0])
+        # time.sleep(2)
         
-        # Test communication
-        test_angles = arm.test_motor_communication()
+        # Read state again
+        arm.print_current_state()
         
-        # Read all motor angles (should show real positions now)
-        print("\nFinal position readings:")
-        angles = arm.read_all_angles()
+        # # Return to zero
+        # arm.set_joint_positions_degrees([0, 0, 0, 0, 0])
+        time.sleep(2)
         
-        # Read all motor velocities
-        velocities = arm.read_all_velocities()
-        
-        # Read all motor currents (torques)
-        currents = arm.read_all_currents()
-        
-        # Disable all motors for safety
-        arm.disable_all_motors()
-        
-    except Exception as e:
-        print(f"Error during testing: {e}")
-        # Make sure to disable motors even if there's an error
-        try:
-            arm.disable_all_motors()
-        except:
-            pass
-    
+    except KeyboardInterrupt:
+        print("Interrupted by user")
     finally:
         arm.close()

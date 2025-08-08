@@ -68,7 +68,7 @@ ICARMClass = None
 USE_REFACTORED = False
 
 try:
-    from IC_ARM_refactored import ICARM
+    from IC_ARM import ICARM
     ICARMClass = ICARM
     USE_REFACTORED = True
     ICARM_AVAILABLE = True
@@ -465,29 +465,22 @@ class TrajectoryExecutor:
                 
                 # 步骤 3: 读取当前状态（快速刷新）
                 if record_data:
-                    if self.use_refactored:
-                        # 重构版本：使用快速状态刷新（平衡性能和数据正确性）
-                        self.arm._refresh_all_states_fast()
-                        
-                        # 保持数据正确性：使用copy避免数据被后续更新覆盖
-                        current_state = {
-                            'positions': self.arm.q.copy(),
-                            'velocities': self.arm.dq.copy(),
-                            'accelerations': self.arm.ddq.copy(),
-                            'torques': self.arm.tau.copy(),
-                            'currents': self.arm.currents.copy()
-                        }
-                        
-                        # 调试输出（每500个点输出一次，减少IO延迟）
-                        if self.debug and i % 500 == 0:
-                            debug_print(f"    [{i}] 位置: {[f'{p:.3f}' for p in current_state['positions'][:2]]}... 速度: {[f'{v:.3f}' for v in current_state['velocities'][:2]]}...", 'DEBUG')
-                    else:
-                        # 原始版本：安全读取状态
-                        current_state, error = safe_call(self.get_current_state)
-                        if error or current_state is None:
-                            debug_print(f"读取状态失败: {error}", 'WARNING')
-                            current_state = self._get_simulated_state()
+                    # 重构版本：使用快速状态刷新（平衡性能和数据正确性）
+                    self.arm._refresh_all_states_ultra_fast()
                     
+                    # 保持数据正确性：使用copy避免数据被后续更新覆盖
+                    current_state = {
+                        'positions': self.arm.q.copy(),
+                        'velocities': self.arm.dq.copy(),
+                        'accelerations': self.arm.ddq.copy(),
+                        'torques': self.arm.tau.copy(),
+                        'currents': self.arm.currents.copy()
+                    }
+                    
+                    # 调试输出（每500个点输出一次，减少IO延迟）
+                    if self.debug and i % 500 == 0:
+                        debug_print(f"    [{i}] 位置: {[f'{p:.3f}' for p in current_state['positions'][:2]]}... 速度: {[f'{v:.3f}' for v in current_state['velocities'][:2]]}...", 'DEBUG')
+
                     # 步骤 4: 保存数据
                     self._save_trajectory_point_data(
                         i, current_time, target_pos_rad, target_velocities[i], 
@@ -525,16 +518,16 @@ class TrajectoryExecutor:
         try:
             # 保存时间和目标数据（已经是copy的）
             self.data_buffer['time'].append(current_time)
-            self.data_buffer['target_positions'].append(target_pos.copy())
-            self.data_buffer['target_velocities'].append(target_vel.copy())
-            self.data_buffer['target_accelerations'].append(target_acc.copy())
+            self.data_buffer['target_positions'].append(target_pos)
+            self.data_buffer['target_velocities'].append(target_vel)
+            self.data_buffer['target_accelerations'].append(target_acc)
             
             # 保存实际数据（已经是copy的，再次copy保证数据安全）
-            self.data_buffer['positions'].append(current_state['positions'].copy())
-            self.data_buffer['velocities'].append(current_state['velocities'].copy())
-            self.data_buffer['accelerations'].append(current_state['accelerations'].copy())
-            self.data_buffer['motor_currents'].append(current_state['currents'].copy())
-            self.data_buffer['motor_torques'].append(current_state['torques'].copy())
+            self.data_buffer['positions'].append(current_state['positions'])
+            self.data_buffer['velocities'].append(current_state['velocities'])
+            self.data_buffer['accelerations'].append(current_state['accelerations'])
+            self.data_buffer['motor_currents'].append(current_state['currents'])
+            self.data_buffer['motor_torques'].append(current_state['torques'])
             
             # 大幅减少调试输出频率（从每50个点→每1000个点）
             # if self.debug and index % 1000 == 0:
@@ -592,18 +585,19 @@ class TrajectoryExecutor:
                 motor_name = f'm{motor_idx + 1}'
                 
                 # 实际数据
-                data_dict[f'{motor_name}_pos_actual'] = [pos[motor_idx] for pos in self.data_buffer['positions']]
-                data_dict[f'{motor_name}_vel_actual'] = [vel[motor_idx] for vel in self.data_buffer['velocities']]
-                data_dict[f'{motor_name}_acc_actual'] = [acc[motor_idx] for acc in self.data_buffer['accelerations']]
-                data_dict[f'{motor_name}_current'] = [curr[motor_idx] for curr in self.data_buffer['motor_currents']]
-                data_dict[f'{motor_name}_torque'] = [torque[motor_idx] for torque in self.data_buffer['motor_torques']]
+                data_dict[f'{motor_name}_pos_actual'] = [float(pos[motor_idx]) for pos in self.data_buffer['positions']]
+                data_dict[f'{motor_name}_vel_actual'] = [float(vel[motor_idx]) for vel in self.data_buffer['velocities']]
+                data_dict[f'{motor_name}_acc_actual'] = [float(acc[motor_idx]) for acc in self.data_buffer['accelerations']]
+                data_dict[f'{motor_name}_current'] = [float(curr[motor_idx]) for curr in self.data_buffer['motor_currents']]
+                data_dict[f'{motor_name}_torque'] = [float(torque[motor_idx]) for torque in self.data_buffer['motor_torques']]
                 
                 # 目标数据
-                data_dict[f'{motor_name}_pos_target'] = [pos[motor_idx] for pos in self.data_buffer['target_positions']]
-                data_dict[f'{motor_name}_vel_target'] = [vel[motor_idx] for vel in self.data_buffer['target_velocities']]
-                data_dict[f'{motor_name}_acc_target'] = [acc[motor_idx] for acc in self.data_buffer['target_accelerations']]
+                data_dict[f'{motor_name}_pos_target'] = [float(pos[motor_idx]) for pos in self.data_buffer['target_positions']]
+                data_dict[f'{motor_name}_vel_target'] = [float(vel[motor_idx]) for vel in self.data_buffer['target_velocities']]
+                data_dict[f'{motor_name}_acc_target'] = [float(acc[motor_idx]) for acc in self.data_buffer['target_accelerations']]
             
             df = pd.DataFrame(data_dict)
+
             debug_print(f"✓ 数据转换完成，共 {len(df)} 个数据点")
             return df
             
@@ -782,7 +776,7 @@ def main():
     executor = TrajectoryExecutor(use_hardware=True, sample_rate=100)
     
     # 加载并执行单个电机轨迹
-    motor_id = 2
+    motor_id = 5
     trajectory_file = f"trajectory_motor_{motor_id}_single.json"
     
     try:
@@ -802,9 +796,39 @@ def main():
             # 绘制结果并保存到对应文件名（电机5）
             executor.plot_results(data, motor_id=motor_id, save_plot=True, filename_base=data_filename)
             
+            # 自动进行轨迹跟踪性能分析
+            print(f"\n开始轨迹跟踪性能分析...")
+            try:
+                from trajectory_analysis import TrajectoryAnalyzer
+                
+                # 创建分析器
+                analyzer = TrajectoryAnalyzer(data_df=data)
+                
+                # 执行分析
+                results = analyzer.analyze_tracking_performance(motor_id)
+                
+                # 生成报告
+                report_filename = data_filename.replace('.csv', f'_analysis_motor_{motor_id}.txt')
+                report = analyzer.generate_analysis_report(motor_id, report_filename)
+                
+                # 绘制分析图表
+                analysis_plot_filename = data_filename.replace('.csv', f'_analysis_motor_{motor_id}.png')
+                analyzer.plot_comprehensive_analysis(motor_id, analysis_plot_filename)
+                
+                print(f"\n=== 轨迹跟踪性能分析结果 ===\n{report}")
+                
+            except ImportError:
+                print("⚠️  无法导入trajectory_analysis模块，跳过自动分析")
+            except Exception as e:
+                print(f"⚠️  自动分析失败: {e}")
+                import traceback
+                traceback.print_exc()
+            
             print(f"\n执行完成!")
             print(f"数据文件: {data_filename}")
             print(f"图表文件: {data_filename.replace('.csv', f'_motor_{motor_id}.png')}")
+            print(f"分析报告: {data_filename.replace('.csv', f'_analysis_motor_{motor_id}.txt')}")
+            print(f"分析图表: {data_filename.replace('.csv', f'_analysis_motor_{motor_id}.png')}")
         else:
             print("执行失败，未采集到数据")
     
