@@ -21,7 +21,7 @@ logger = logging.getLogger('TrajectoryExecutor')
 # 调试工具函数
 def debug_print(msg: str, level: str = 'INFO'):
     """Debug print with timestamp"""
-    timestamp = time.strftime('%H:%M:%S')
+    timestamp = time.strftime('%H:%M:%S') + f".{int(time.time() * 1000) % 1000:03d}"
     print(f"[{timestamp}] [EXECUTOR-{level}] {msg}")
 
 def safe_call(func, *args, **kwargs):
@@ -452,15 +452,15 @@ class TrajectoryExecutor:
                 # 优化时间同步：只在必要时等待，减少延迟
                 if current_time < target_time:
                     sleep_time = target_time - current_time
-                    # 只在sleep时间较大时才等待，减少微小sleep引起的延迟
-                    if sleep_time > 0.001:  # 只在超过1ms时才等待
-                        if self.debug and i % 100 == 0:  # 减少调试输出频率
+                    # 提高等待阈值，减少微小sleep引起的延迟累积
+                    if sleep_time > 0.005:  # 只在超过5ms时才等待
+                        if self.debug and i % 500 == 0:  # 大幅减少调试输出频率
                             debug_print(f"  [{i}] 等待 {sleep_time:.3f}s")
                         time.sleep(sleep_time)
-                    # 对于微小的时间差，直接跳过，提高实时性
+                    # 对于小于5ms的时间差，直接跳过，提高实时性和减少延迟累积
                 
                 # 步骤 1: 发送位置命令
-                if self.debug and i % 200 == 0:  # 进一步减少调试输出频率
+                if self.debug and i % 1000 == 0:  # 大幅减少调试输出频率，每1000个点输出一次
                     debug_print(f"  [{i}/{len(time_points)}] 位置: {[f'{np.degrees(p):.1f}' for p in target_pos_rad]}°")
                 
                 result, error = safe_call(self.send_position_command, target_pos_rad)
