@@ -22,7 +22,7 @@ from DM_CAN import DM_Motor_Type, MotorControl, Motor, DM_variable
 #     'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 35, 'kd': 1.5, 'torque': 0.5},
 # }
 motor_config = {
-	'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 50, 'kd': 1.5, 'torque': -9},
+	'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
 	'm2': {'type': DM_Motor_Type.DM4340, 'id': 0x02, 'master_id': 0x00, 'kp': 65, 'kd': 1.8, 'torque': 2},
 	'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 55, 'kd': 1.5, 'torque': 0},
 	'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 45, 'kd': 1.5, 'torque': 0},
@@ -823,11 +823,10 @@ class ICARM:
 			for motor_name in self.motors.keys():
 				try:
 					# 刷新电机状态以获取最新位置
-					motor = self.motors[motor_name]
-					self.mc.refresh_motor_status(motor)
+					self.mc.refresh_motor_status(self.motors[motor_name])
 					
 					# 获取当前位置
-					current_pos = motor.getPosition()
+					current_pos = self.mc.get_motor_position(self.motors[motor_name])
 					if current_pos is not None:
 						# 设置当前位置为零点 (这里可以根据具体电机API调整)
 						debug_print(f"{motor_name}: 当前位置 {np.degrees(current_pos):.2f}° 设为零点")
@@ -873,7 +872,7 @@ class ICARM:
 			self.mc.refresh_motor_status(motor)
 			
 			# 获取当前位置
-			current_pos = motor.getPosition()
+			current_pos = self.mc.get_motor_position(motor)
 			if current_pos is None:
 				debug_print(f"{motor_name}: 无法获取当前位置", 'ERROR')
 				return False

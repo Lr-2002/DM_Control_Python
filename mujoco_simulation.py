@@ -51,11 +51,11 @@ class MuJoCoICARMSimulation:
 		
 		# Joint mapping from IC ARM motors to MuJoCo joints
 		self.joint_mapping = {
-			'm1': 'j1',  # Motor 1 -> Joint 1
-			'm2': 'j2',  # Motor 2 -> Joint 2
-			'm3': 'j3',  # Motor 3 -> Joint 3
-			'm4': 'j4',  # Motor 4 -> Joint 4
-			'm5': 'j5'   # Motor 5 -> Joint 5
+			'm1': 'm1-l2',  # Motor 1 -> Joint 1
+			'm2': 'm2-l3',  # Motor 2 -> Joint 2
+			'm3': 'm3-l4',  # Motor 3 -> Joint 3
+			'm4': 'm4-l5',  # Motor 4 -> Joint 4
+			'm5': 'm5-l6'   # Motor 5 -> Joint 5
 		}
 		
 		# Get joint indices in MuJoCo model
@@ -150,19 +150,19 @@ class MuJoCoICARMSimulation:
 			}
 		
 		try:
-			# Use the new API method get_joint_positions() which returns numpy array in radians
-			positions_rad = self.ic_arm.get_joint_positions(refresh=True)
-			print('read position is ', positions_rad)
-			
-			# Convert numpy array to the expected dictionary format
+			# 直接读取每个电机的位置，确保获取最新数据
 			positions = {}
 			motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
-			for i, motor_name in enumerate(motor_names):
-				if i < len(positions_rad):
-					rad_value = float(positions_rad[i])
+			
+			for motor_name in motor_names:
+				try:
+					# 直接调用 _read_motor_position_raw 确保获取最新位置
+					rad_value = self.ic_arm._read_motor_position_raw(motor_name)
 					deg_value = float(np.degrees(rad_value))
 					positions[motor_name] = {'rad': rad_value, 'deg': deg_value}
-				else:
+					print(f"  {motor_name}: {deg_value:.2f}° ({rad_value:.4f} rad)")
+				except Exception as e:
+					print(f"  Error reading {motor_name}: {e}")
 					positions[motor_name] = {'rad': 0.0, 'deg': 0.0}
 			
 			return positions
