@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 2.8.3)
 
-project(ic1.1.2)
+project(装配体0.01)
 
 find_package(catkin REQUIRED)
 
