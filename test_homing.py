@@ -44,7 +44,7 @@ def main():
         print("使用平滑轨迹回到零位...")
         
         # 执行回零操作
-        success = arm.home_to_zero(speed=0.01, timeout=30.0)
+        success = arm.home_to_zero(speed=0.3, timeout=30.0)
         
         if success:
             print("\n✓ 回零操作成功完成!")

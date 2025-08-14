@@ -11,8 +11,8 @@ def main():
     print("=== PINOCCHIO NATIVE VISUALIZATION ===")
     
     # 加载URDF模型
-    urdf_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm_urdf/urdf/ic1.1.2.urdf"
-    pkg_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm_urdf/urdf"
+    urdf_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm/urdf/ic_arm.urdf"
+    pkg_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm/urdf"
     # 加载模型
     # model, _, _  = pin.buildModelsFromUrdf(urdf_path)
     model, collision_model, visual_model = pin.buildModelsFromUrdf(urdf_path)
@@ -48,10 +48,10 @@ def main():
         elif frame.name == 'l5':
             ee_frame_id = i
     
-    # if base_frame_id is None:
-    #     base_frame_id = 1  # 默认
-    # if ee_frame_id is None:
-    #     ee_frame_id = 11   # 默认
+    if base_frame_id is None:
+        base_frame_id = 1  # 默认
+    if ee_frame_id is None:
+        ee_frame_id = 11   # 默认
         
     print(f"\n🎯 Using frames:")
     print(f"   BASE: Frame {base_frame_id} ({model.frames[base_frame_id].name})")

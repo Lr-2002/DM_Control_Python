@@ -22,7 +22,7 @@ from DM_CAN import DM_Motor_Type, MotorControl, Motor, DM_variable
 #     'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 35, 'kd': 1.5, 'torque': 0.5},
 # }
 motor_config = {
-    'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 60, 'kd': 3, 'torque': -8},
+    'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 60, 'kd': 3, 'torque': 0},
     'm2': {'type': DM_Motor_Type.DM4340, 'id': 0x02, 'master_id': 0x00, 'kp': 65, 'kd': 1.8, 'torque': 0},
     'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 55, 'kd': 1.5, 'torque': 0},
     'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 45, 'kd': 1.5, 'torque': 0},
@@ -1018,6 +1018,170 @@ class ICARM:
             debug_print(f"设置 {motor_name} 零点失败: {e}", 'ERROR')
             return False
     
+    def pseudo_gravity_compensation(self, update_rate=50.0, duration=None, 
+                                   kp_scale=1.0, kd_scale=1.0, enable_logging=True):
+        """
+        伪重力补偿：实时读取关节角度并设置为位置目标
+        
+        这个方法会持续运行一个控制循环：
+        1. 读取当前关节位置
+        2. 将当前位置设置为新的目标位置
+        3. 通过PD控制器保持当前姿态，抵抗外力（如重力）
+        
+        Args:
+            update_rate: 控制循环频率 (Hz)，建议20-100Hz
+            duration: 运行时长 (秒)，None为无限制
+            kp_scale: Kp增益缩放因子，用于调整位置控制强度
+            kd_scale: Kd增益缩放因子，用于调整阻尼
+            enable_logging: 是否启用详细日志
+            
+        Returns:
+            bool: 是否正常结束（True）或异常退出（False）
+        """
+        debug_print("=== 启动伪重力补偿模式 ===")
+        debug_print(f"控制频率: {update_rate:.1f} Hz")
+        debug_print(f"运行时长: {'无限制' if duration is None else f'{duration:.1f}s'}")
+        debug_print(f"Kp缩放: {kp_scale:.2f}, Kd缩放: {kd_scale:.2f}")
+        debug_print("按 Ctrl+C 停止补偿")
+        
+        try:
+            # 验证参数
+            validate_type(update_rate, (int, float), 'update_rate')
+            validate_type(duration, (int, float, type(None)), 'duration')
+            validate_type(kp_scale, (int, float), 'kp_scale')
+            validate_type(kd_scale, (int, float), 'kd_scale')
+            
+            if update_rate <= 0 or update_rate > 200:
+                raise ValueError(f"update_rate应在(0, 200]范围内，当前: {update_rate}")
+            if duration is not None and duration <= 0:
+                raise ValueError(f"duration应为正数或None，当前: {duration}")
+            if kp_scale <= 0 or kd_scale <= 0:
+                raise ValueError(f"kp_scale和kd_scale应为正数，当前: kp={kp_scale}, kd={kd_scale}")
+            
+            # 计算控制周期
+            dt = 1.0 / update_rate
+            
+            # 启用所有电机
+            debug_print("启用所有电机...")
+            self.enable_all_motors()
+            time.sleep(0.1)
+            
+            # 读取初始位置
+            debug_print("读取初始位置...")
+            self._refresh_all_states()
+            initial_positions = self.q.copy()
+            debug_print(f"初始位置 (度): {np.degrees(initial_positions)}")
+            
+            # 初始化统计变量
+            loop_count = 0
+            start_time = time.time()
+            last_log_time = start_time
+            max_position_change = np.zeros(5)
+            total_position_change = np.zeros(5)
+            
+            # 主控制循环
+            debug_print("开始重力补偿控制循环...")
+            
+            while True:
+                loop_start_time = time.time()
+                
+                # 检查运行时间
+                if duration is not None and (loop_start_time - start_time) >= duration:
+                    debug_print(f"达到预设运行时长 {duration:.1f}s，正常结束")
+                    break
+                
+                try:
+                    # 1. 快速读取当前位置（避免过多调试输出）
+                    self._refresh_all_states_ultra_fast()
+                    current_positions = self.q.copy()
+                    
+                    # 2. 将当前位置设置为目标位置
+                    # 使用当前配置的PD参数，但可以通过缩放因子调整
+                    for i, motor_name in enumerate(self.motor_names):
+                        motor = self.motors[motor_name]
+                        config = self.motor_config[motor_name]
+                        
+                        # 应用缩放因子
+                        kp = config['kp'] * kp_scale
+                        kd = config['kd'] * kd_scale
+                        torque_ff = config['torque']  # 前馈力矩保持不变
+                        
+                        # 发送位置命令（目标位置=当前位置）
+                        self.mc.controlMIT(motor, current_positions[i], 0.0, kp, kd, torque_ff)
+                    
+                    # 3. 统计和日志
+                    loop_count += 1
+                    
+                    # 计算位置变化
+                    if loop_count > 1:
+                        position_change = np.abs(current_positions - initial_positions)
+                        max_position_change = np.maximum(max_position_change, position_change)
+                        total_position_change += position_change
+                    
+                    # 定期日志输出
+                    if enable_logging and (loop_start_time - last_log_time) >= 2.0:  # 每2秒输出一次
+                        elapsed = loop_start_time - start_time
+                        actual_freq = loop_count / elapsed if elapsed > 0 else 0
+                        
+                        debug_print(f"补偿运行中... 时间: {elapsed:.1f}s, 频率: {actual_freq:.1f}Hz")
+                        debug_print(f"当前位置 (度): {np.degrees(current_positions)}")
+                        debug_print(f"最大偏移 (度): {np.degrees(max_position_change)}")
+                        
+                        last_log_time = loop_start_time
+                    
+                    # 4. 控制循环时序
+                    loop_duration = time.time() - loop_start_time
+                    sleep_time = dt - loop_duration
+                    
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+                    elif enable_logging and loop_count % 100 == 0:  # 偶尔警告时序问题
+                        debug_print(f"警告: 控制循环超时 {loop_duration*1000:.1f}ms > {dt*1000:.1f}ms", 'WARNING')
+                
+                except KeyboardInterrupt:
+                    debug_print("用户中断，停止重力补偿")
+                    break
+                except Exception as e:
+                    debug_print(f"控制循环异常: {e}", 'ERROR')
+                    if enable_logging:
+                        debug_print(f"详细错误: {traceback.format_exc()}", 'ERROR')
+                    # 继续运行，不因单次异常而退出
+                    continue
+            
+            # 输出最终统计
+            total_time = time.time() - start_time
+            avg_freq = loop_count / total_time if total_time > 0 else 0
+            avg_position_change = total_position_change / max(loop_count - 1, 1)
+            
+            debug_print("=== 重力补偿统计 ===")
+            debug_print(f"运行时长: {total_time:.2f}s")
+            debug_print(f"控制循环次数: {loop_count}")
+            debug_print(f"平均频率: {avg_freq:.1f} Hz")
+            debug_print(f"目标频率: {update_rate:.1f} Hz")
+            debug_print(f"频率达成率: {(avg_freq/update_rate)*100:.1f}%")
+            debug_print(f"最大位置偏移 (度): {np.degrees(max_position_change)}")
+            debug_print(f"平均位置偏移 (度): {np.degrees(avg_position_change)}")
+            debug_print("===================")
+            
+            return True
+            
+        except KeyboardInterrupt:
+            debug_print("用户中断重力补偿")
+            return True
+        except Exception as e:
+            debug_print(f"重力补偿失败: {e}", 'ERROR')
+            debug_print(f"详细错误: {traceback.format_exc()}", 'ERROR')
+            return False
+        finally:
+            # 安全清理
+            try:
+                debug_print("清理资源...")
+                # 可选择是否禁用电机，通常保持启用状态
+                # self.disable_all_motors()
+                debug_print("重力补偿模式结束")
+            except Exception as e:
+                debug_print(f"清理资源时出错: {e}", 'ERROR')
+
     def monitor_positions_continuous(self, update_rate=10.0, duration=None, 
                                     save_csv=False, csv_filename=None):
         """
