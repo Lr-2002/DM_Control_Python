@@ -22,8 +22,8 @@ from DM_CAN import DM_Motor_Type, MotorControl, Motor, DM_variable
 #     'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 35, 'kd': 1.5, 'torque': 0.5},
 # }
 motor_config = {
-	'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
-	'm2': {'type': DM_Motor_Type.DM4340, 'id': 0x02, 'master_id': 0x00, 'kp': 65, 'kd': 1.8, 'torque': 2},
+	'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 35, 'kd': 2.5, 'torque': -8},
+	'm2': {'type': DM_Motor_Type.DM4340, 'id': 0x02, 'master_id': 0x00, 'kp': 65, 'kd': 1.8, 'torque': 0},
 	'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 55, 'kd': 1.5, 'torque': 0},
 	'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 45, 'kd': 1.5, 'torque': 0},
 	'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 40, 'kd': 1.5, 'torque': 0},
@@ -568,7 +568,10 @@ class ICARM:
 				kp = config['kp']
 				kd = config['kd']
 				torque = config['torque']
+				# debug_print('sending info to mit')
 				self.mc.controlMIT(motor, kp, kd, position_rad, velocity_rad_s, torque)
+				
+				time.sleep(0.0002)
 				return True
 			else:
 				print("Motor not found in configuration")
@@ -609,6 +612,8 @@ class ICARM:
 			)
 			success = success and result
 		
+			if not success: 
+				print('------ run error')
 		return success
 	
 	def set_joint_positions_degrees(self, positions_deg, velocities_deg_s=None, torques_nm=None):
@@ -680,7 +685,7 @@ class ICARM:
 		print("EMERGENCY STOP!")
 		return self.disable_all_motors()
 	
-	def home_to_zero(self, speed: float = 0.5, timeout: float = 30.0) -> bool:
+	def home_to_zero(self, speed: float = 0.5, timeout: float = 30.0, frequency=100) -> bool:
 		"""
 		让所有电机平滑地回到零位
 		
@@ -708,13 +713,14 @@ class ICARM:
 			estimated_time = max_distance / speed
 			
 			debug_print(f"最大移动距离: {np.degrees(max_distance):.1f}°")
+			debug_print(f'speed is {speed}')
 			debug_print(f"预计回零时间: {estimated_time:.1f}秒")
 			
 			if estimated_time > timeout:
 				debug_print(f"预计时间超过超时限制 ({timeout}s)，建议增加速度或超时时间", 'WARNING')
 			
 			# 生成平滑轨迹到零位
-			num_steps = max(10, int(estimated_time * 100))  # 至少10步，或按100Hz计算
+			num_steps = max(10, int(estimated_time * frequency))  # 至少10步，或按100Hz计算
 			dt = estimated_time / num_steps
 			
 			debug_print(f"生成轨迹: {num_steps}步，步长{dt:.3f}s")
@@ -751,7 +757,7 @@ class ICARM:
 					time.sleep(dt)
 			
 			# 验证回零结果
-			time.sleep(0.5)  # 等待稳定
+			# time.sleep(0.5)  # 等待稳定
 			final_positions = self.get_joint_positions()
 			
 			if final_positions is not None:
@@ -760,7 +766,7 @@ class ICARM:
 				debug_print(f"最大误差: {np.degrees(max_error):.2f}°")
 				
 				# 判断是否成功回零 (误差小于1度认为成功)
-				if max_error < np.radians(1.0):
+				if max_error < np.radians(3):
 					debug_print("✓ 回零成功!", 'INFO')
 					return True
 				else:
@@ -772,6 +778,8 @@ class ICARM:
 				
 		except Exception as e:
 			debug_print(f"回零操作失败: {e}", 'ERROR')
+			import traceback
+			traceback.print_exc()
 			return False
 	
 	def set_zero_position(self) -> bool:
@@ -826,9 +834,11 @@ class ICARM:
 					self.mc.refresh_motor_status(self.motors[motor_name])
 					
 					# 获取当前位置
-					current_pos = self.mc.get_motor_position(self.motors[motor_name])
+					# current_pos = self.mc.get_motor_position(self.motors[motor_name])
+					current_pos = self.motors[motor_name].state_q
 					if current_pos is not None:
 						# 设置当前位置为零点 (这里可以根据具体电机API调整)
+						self.mc.set_zero_position(self.motors[motor_name])
 						debug_print(f"{motor_name}: 当前位置 {np.degrees(current_pos):.2f}° 设为零点")
 						success_count += 1
 					else:
@@ -984,7 +994,7 @@ class ICARM:
 		if refresh:
 			self._refresh_all_states()
 		
-		return np.degrees(self._velocities)
+		return np.degrees(self.dq)
 
 	# ========== INFORMATION FUNCTIONS ==========
 	
@@ -1055,7 +1065,6 @@ class ICARM:
 				
 				target_positions_deg = point[:5]
 				target_time = point[5]
-				
 				# Wait for target time
 				while (time.time() - start_time) < target_time:
 					time.sleep(0.001)

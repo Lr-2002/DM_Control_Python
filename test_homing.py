@@ -12,13 +12,11 @@ def main():
     """测试回零功能"""
     print("=== 测试IC ARM回零功能 ===\n")
     
-    arm = ICARM()
+    arm = ICARM(debug=False)
     
     try:
         print("1. 连接到IC ARM...")
-        if not arm.connect():
-            print("连接失败，程序退出")
-            return
+        arm.enable()
         
         print("✓ 连接成功\n")
         
@@ -37,16 +35,16 @@ def main():
             return
         
         # 询问用户是否要执行回零
-        response = input("是否执行回零操作? (y/n): ").lower().strip()
-        if response != 'y':
-            print("用户取消回零操作")
-            return
+        # response = input("是否执行回零操作? (y/n): ").lower().strip()
+        # if response != 'y':
+        #     print("用户取消回零操作")
+        #     return
         
         print("\n3. 开始回零操作...")
         print("使用平滑轨迹回到零位...")
         
         # 执行回零操作
-        success = arm.home_to_zero(speed=0.3, timeout=30.0)
+        success = arm.home_to_zero(speed=0.01, timeout=30.0)
         
         if success:
             print("\n✓ 回零操作成功完成!")
@@ -59,19 +57,13 @@ def main():
                 
                 max_error = max(abs(pos) for pos in final_pos)
                 print(f"最大误差: {np.degrees(max_error):.3f}°")
+            for i in range(0, 10000):
+                arm.set_joint_positions(final_pos)
+
         else:
             print("\n✗ 回零操作失败")
-        
-        print("\n4. 测试软件零位设置功能...")
-        
-        # 演示软件零位设置
-        response = input("是否测试软件零位设置? (y/n): ").lower().strip()
-        if response == 'y':
-            success = arm.set_zero_position()
-            if success:
-                print("✓ 软件零位设置成功")
-            else:
-                print("✗ 软件零位设置失败")
+                        # time.sleep(0.01)
+
         
     except KeyboardInterrupt:
         print("\n用户中断程序")
@@ -80,7 +72,7 @@ def main():
     finally:
         # 安全断开连接
         print("\n5. 断开连接...")
-        arm.disconnect()
+        arm.close()
         print("✓ 程序结束")
 
 def test_homing_with_different_speeds():
