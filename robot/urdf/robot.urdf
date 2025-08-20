@@ -211,7 +211,7 @@
     <child
       link="joint3_link" />
     <axis
-      xyz="0 0 -1" />
+      xyz="0 0 1" />
     <limit
       lower="-3.14"
       upper="3.14"
