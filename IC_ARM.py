@@ -25,10 +25,10 @@ from DM_CAN import DM_Motor_Type, MotorControl, Motor, DM_variable
 motor_config = {
     'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 60, 'kd': 3, 'torque': -8},
     # 'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': -5},
-    'm2': {'type': DM_Motor_Type.DM4340, 'id': 0x02, 'master_id': 0x00, 'kp': 65, 'kd': 1.8, 'torque': 0},
+    'm2': {'type': DM_Motor_Type.DM6248, 'id': 0x02, 'master_id': 0x00, 'kp': 65, 'kd': 1.8, 'torque': 0},
     'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 55, 'kd': 1.5, 'torque': 0},
-    'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 45, 'kd': 1.5, 'torque': 0},
-    'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 40, 'kd': 1.5, 'torque': 0},
+    'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 70, 'kd': 1.9, 'torque': 0},
+    'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 50, 'kd': 1.8, 'torque': 0},
 }
 
 # ===== 辅助函数定义 =====
