@@ -6,12 +6,14 @@ IC_ARM 重构版本 - 提供清晰的读写分离和统一状态管理
 
 import time
 import math
+from turtle import position
 import numpy as np
 import traceback
 import logging
 from typing import Dict, List, Optional, Tuple, Any, Union
 import serial
-from pin.gravity_compensation import Gravity_Compensation
+# from pin.gravity_compensation import Gravity_Compensation
+from minimum_gc import MinimumGravityCompensation as GC
 # DM_CAN imports
 from DM_CAN import DM_Motor_Type, MotorControl, Motor, DM_variable
 
@@ -23,14 +25,20 @@ from DM_CAN import DM_Motor_Type, MotorControl, Motor, DM_variable
 #     'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 35, 'kd': 1.5, 'torque': 0.5},
 # }
 motor_config = {
-    'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 60, 'kd': 3, 'torque': -8},
+    'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 150, 'kd': 3, 'torque': -15},
     # 'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': -5},
     'm2': {'type': DM_Motor_Type.DM6248, 'id': 0x02, 'master_id': 0x00, 'kp': 65, 'kd': 1.8, 'torque': 0},
     'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 55, 'kd': 1.5, 'torque': 0},
     'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 70, 'kd': 1.9, 'torque': 0},
     'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 50, 'kd': 1.8, 'torque': 0},
 }
-
+motor_config_gc = {
+    'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
+    'm2': {'type': DM_Motor_Type.DM6248, 'id': 0x02, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
+    'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
+    'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
+    'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
+}
 # ===== 辅助函数定义 =====
 
 def debug_print(msg: str, level: str = 'INFO'):
@@ -74,7 +82,7 @@ def validate_array(array: np.ndarray, expected_shape: Tuple, name: str) -> bool:
     return True
 
 class ICARM:
-    def __init__(self, port='/dev/cu.usbmodem00000000050C1', baudrate=921600, debug=True, gc=False):
+    def __init__(self, port='/dev/cu.usbmodem00000000050C1', baudrate=921600, debug=False, gc=False):
         """Initialize IC ARM with refactored interface and debug support"""
         self.debug = debug
         debug_print("=== 初始化IC_ARM_Refactored ===")
@@ -141,14 +149,14 @@ class ICARM:
             self._read_motor_info()
             debug_print("✓ IC_ARM_Refactored 初始化完成")
             # breakpoint()
-            self.gc_flag = False 
-            # if self.gc_flag:
-            #     self.gc = Gravity_Compensation(
-            #         urdf='/Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm/urdf/ic_arm.urdf',
-            #         gravity_direction='-z'
-            #     )
-            #     print('启动了重力补偿')
-            #     input('go on')
+            self.gc_flag = gc 
+            if self.gc_flag:
+                self.gc = GC(
+                    # urdf='/Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm/urdf/ic_arm.urdf',
+                    # gravity_direction='-z'
+                )
+                print('启动了重力补偿')
+                input('go on')
         except Exception as e:
             debug_print(f"✗ 初始化失败: {e}", 'ERROR')
             debug_print(f"详细错误: {traceback.format_exc()}", 'ERROR')
@@ -564,7 +572,7 @@ class ICARM:
     
     # ========== LOW-LEVEL WRITE FUNCTIONS ==========
     
-    def _send_motor_command_raw(self, motor, position_rad, velocity_rad_s=0.0, torque_nm=0.0):
+    def _send_motor_command_raw(self, motor, position_rad=0.0, velocity_rad_s=0.0, torque_nm=0.0):
         """Send command to a single motor (lowest level)"""
         try:
             motor_name = None
@@ -577,8 +585,9 @@ class ICARM:
                 config = self.motor_config[motor_name]
                 kp = config['kp']
                 kd = config['kd']
-                torque = config['torque']
+                torque = config['torque'] + torque_nm
                 # debug_print('sending info to mit')
+                debug_print(f"Sending command to motor {motor_name}: kp={kp}, kd={kd}, position={position_rad}, velocity={velocity_rad_s}, torque={torque}")
                 self.mc.controlMIT(motor, kp, kd, position_rad, velocity_rad_s, torque)
                 
                 time.sleep(0.0002)
@@ -597,6 +606,7 @@ class ICARM:
         if 0 <= joint_index < 5:
             motor_name = self.motor_names[joint_index]
             if motor_name in self.motors:
+                debug_print(f"Setting joint {joint_index} position to {position_rad} rad, velocity to {velocity_rad_s} rad/s, torque to {torque_nm} Nm")
                 return self._send_motor_command_raw(
                     self.motors[motor_name], 
                     position_rad, 
@@ -604,7 +614,26 @@ class ICARM:
                     torque_nm
                 )
         return False
-    
+
+    def set_joint_torque(self, torques_nm):
+        """Set positions of all joints"""
+        if torques_nm is None:
+            torques_nm = np.zeros(5)
+        
+        success = True
+        for i in range(min(5, len(torques_nm))):
+            debug_print(f"Setting joint {i} torque to {torques_nm[i]} Nm")
+            result = self._send_motor_command_raw(
+                self.motors[self.motor_names[i]], 
+                position_rad=0,
+                velocity_rad_s=0,
+                torque_nm=torques_nm[i]
+            )
+            success = success and result
+        
+            if not success: 
+                print('------ run error')
+        return success   
     def set_joint_positions(self, positions_rad, velocities_rad_s=None, torques_nm=None):
         """Set positions of all joints"""
         if velocities_rad_s is None:
@@ -1027,19 +1056,127 @@ class ICARM:
         except Exception as e:
             debug_print(f"设置 {motor_name} 零点失败: {e}", 'ERROR')
             return False
+    def cal_gravity_full(self):
+        return self.gc.calculate_torque(self.q, self.dq, self.ddq)
+
+    def cal_gravity_coriolis(self):
+        return self.gc.calculate_coriolis_torque(self.q, self.dq)
     def cal_gravity(self):
-        """计算当前关节位置的重力补偿力矩"""
-        # 获取当前硬件关节位置（5维）
-        current_positions = self.get_joint_positions()
+        return self.gc.calculate_gravity_torque(self.q)
+    def start_gravity_compensation_mode(self, duration=None, update_rate=100):
+        """
+        启动重力补偿模式
         
-        # 使用重力补偿计算（自动处理5维->10维->5维映射）
-        tau_gravity = self.gc.compute_gravity_torque(current_positions)
+        Args:
+            duration: 运行时长(秒)，None为无限运行
+            update_rate: 更新频率(Hz)
+        """
+        if not self.gc_flag:
+            print("❌ 重力补偿未启用，请在初始化时设置gc=True")
+            return False
         
-        print(f"硬件关节位置: {current_positions}")
-        print(f"重力补偿力矩: {tau_gravity}")
+        print("=== 启动重力补偿模式 ===")
+        print(f"更新频率: {update_rate} Hz")
+        print(f"运行时长: {'无限制' if duration is None else f'{duration}秒'}")
+        print("按 Ctrl+C 停止")
         
-        return tau_gravity 
+        # 切换到重力补偿控制参数
+        self._switch_to_gravity_compensation_mode()
+        
+        dt = 1.0 / update_rate
+        start_time = time.time()
+        
+        try:
+            while True:
+                loop_start = time.time()
+                
+                # 更新状态
+                self._refresh_all_states()
+                
+                # 计算重力补偿力矩
+                tau_compensation = self.cal_gravity_coriolis()
+                if tau_compensation.ndim > 1:
+                    tau_compensation = tau_compensation.flatten()
+                
+                # 应用重力补偿力矩到各电机
+                self.set_joint_torque(
+                    tau_compensation # 重力补偿力矩
+                )
+                
+                # 显示状态
+                elapsed = time.time() - start_time
+                # if int(elapsed * 10) % 10 == 0:  # 每0.1秒显示一次
+                    # pos_str = " ".join([f"{np.degrees(p):6.1f}°" for p in self.q])
+                    # vel_str = " ".join([f"{np.degrees(v):6.1f}°/s" for v in self.dq])
+                tau_str = " ".join([f"{t:6.2f}" for t in tau_compensation])
+                tau_real = self.get_joint_torques()
+                tau_real_str = " ".join([f"{t:6.2f}" for t in tau_real])
+                print(f"\n期望力矩: [{tau_str}]\n实际力矩: [{tau_real_str}]\n[{elapsed:6.1f}s]", 
+                      end="", flush=True)
+                
+                # 检查运行时长
+                if duration is not None and elapsed >= duration:
+                    break
+                
+                # 控制循环频率
+                loop_time = time.time() - loop_start
+                if loop_time < dt:
+                    time.sleep(dt - loop_time)
+                    
+        except KeyboardInterrupt:
+            print("\n用户中断重力补偿模式")
+        except Exception as e:
+            print(f"\n重力补偿模式出错: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # 恢复原始控制参数
+            self._restore_normal_mode()
+            print("\n重力补偿模式结束")
+        
+        return True
     
+    def _switch_to_gravity_compensation_mode(self):
+        """切换到重力补偿模式的控制参数"""
+        print("切换到重力补偿控制参数...")
+        
+        # for motor_name, config in motor_config_gc.items():
+        #     if motor_name in self.motors:
+        #         motor = self.motors[motor_name]
+        #         # 应用重力补偿模式的参数
+        #         motor.set_torque_control(
+        #             position=0.0,
+        #             velocity=0.0, 
+        #             kp=config['kp'],      # 0
+        #             kd=config['kd'],      # 0
+        #             torque=config['torque']  # 0
+        #         )
+        self.motor_config = motor_config_gc
+        time.sleep(0.1)  # 等待参数生效
+        print("✓ 已切换到重力补偿模式")
+    
+    def _restore_normal_mode(self):
+        """恢复正常控制模式的参数"""
+        print("恢复正常控制参数...")
+        
+        # for motor_name, config in motor_config.items():
+        #     if motor_name in self.motors:
+        #         motor = self.motors[motor_name]
+        #         # 恢复正常模式的参数
+        #         motor.set_torque_control(
+        #             position=0.0,
+        #             velocity=0.0,
+        #             kp=config['kp'],
+        #             kd=config['kd'], 
+        #             torque=config['torque']
+        #         )
+        self.motor_config = motor_config
+        time.sleep(0.1)  # 等待参数生效
+        print("✓ 已恢复正常控制模式")
+
+
+
+
     def pseudo_gravity_compensation(self, update_rate=50.0, duration=None, 
                                    kp_scale=1.0, kd_scale=1.0, enable_logging=True):
         """
@@ -1265,7 +1402,9 @@ class ICARM:
                     print(f"\r[{elapsed_time:6.1f}s] 位置: [{pos_str}] 速度: [{vel_str}]", end="", flush=True)
                     
                     if self.gc_flag:
-                        self.cal_gravity()
+                        tau = self.cal_gravity()
+                        # tau = self.cal_gravity_coriolis()
+                        print(tau)
                     # 保存到CSV
                     if save_csv and csv_writer:
                         timestamp = datetime.now().isoformat()

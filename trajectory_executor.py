@@ -843,9 +843,10 @@ def main():
     executor = TrajectoryExecutor(use_hardware=True, sample_rate=100)
     
     # 加载并执行单个电机轨迹
-    motor_id = 2
-    trajectory_file = f"trajectory_motor_{motor_id}_single.json"
-    
+    motor_id = 1
+    # trajectory_file = f"trajectory_motor_{motor_id}_single.json"
+    trajectory_file = "trajectory_concatenated_simultaneous.json" 
+    # trajectory_file = "trajectory_concatenated_sequential.json" 
     try:
         # 加载轨迹
         trajectory = executor.load_trajectory(trajectory_file)

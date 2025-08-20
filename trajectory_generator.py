@@ -226,19 +226,24 @@ class TrajectoryGenerator:
 		}
 	
 	def generate_complex_trajectory(self, duration: float = 30.0, 
-								  amplitudes: List[float] = None) -> Dict:
+								  amplitudes: List[float] = None,
+								  motor1_range: List[float] = None) -> Dict:
 		"""
 		生成复合激励轨迹 (多个电机同时运动，不同频率)
 		
 		Args:
 			duration: 轨迹持续时间
-			amplitudes: 各电机的幅度列表
+			amplitudes: 各电机的幅度列表 (仅用于电机2-5)
+			motor1_range: 电机1的运动范围 [min_angle, max_angle] (度)
 			
 		Returns:
 			复合轨迹
 		"""
 		if amplitudes is None:
 			amplitudes = [90, 75, 60, 45, 30]  # 不同电机不同幅度
+		
+		if motor1_range is None:
+			motor1_range = [-30, 0]  # 电机1默认范围: -30° 到 0°
 		
 		dt = 0.01
 		t = np.arange(0, duration, dt)
@@ -257,7 +262,31 @@ class TrajectoryGenerator:
 		]
 		
 		for motor_idx in range(self.num_motors):
-			if motor_idx < len(amplitudes):
+			if motor_idx == 0:  # 电机1 (索引0) - 使用自定义范围
+				min_angle_rad = np.radians(motor1_range[0])
+				max_angle_rad = np.radians(motor1_range[1])
+				center_rad = (min_angle_rad + max_angle_rad) / 2
+				amplitude_rad = (max_angle_rad - min_angle_rad) / 2
+				
+				# 多频率组合，但在指定范围内
+				position = center_rad  # 从中心位置开始
+				velocity = 0
+				acceleration = 0
+				
+				for freq in frequencies[motor_idx]:
+					omega = 2 * np.pi * freq
+					# 每个频率分量的权重
+					weight = 1.0 / len(frequencies[motor_idx])
+					
+					position += weight * amplitude_rad * np.sin(omega * t)
+					velocity += weight * amplitude_rad * omega * np.cos(omega * t)
+					acceleration += -weight * amplitude_rad * omega**2 * np.sin(omega * t)
+				
+				all_positions[:, motor_idx] = position
+				all_velocities[:, motor_idx] = velocity
+				all_accelerations[:, motor_idx] = acceleration
+				
+			elif motor_idx < len(amplitudes):  # 电机2-5 - 保持原有逻辑
 				amp_rad = np.radians(amplitudes[motor_idx])
 				
 				# 多频率组合
@@ -284,9 +313,148 @@ class TrajectoryGenerator:
 			'velocities': all_velocities,
 			'accelerations': all_accelerations,
 			'amplitudes_deg': amplitudes,
+			'motor1_range_deg': motor1_range,
 			'frequencies': frequencies
 		}
 	
+	def load_trajectory(self, filename: str) -> Dict:
+		"""从文件加载轨迹"""
+		with open(filename, 'r') as f:
+			trajectory = json.load(f)
+		
+		# 转换列表为numpy数组
+		for key in ['time', 'positions', 'velocities', 'accelerations']:
+			if key in trajectory:
+				trajectory[key] = np.array(trajectory[key])
+		
+		return trajectory
+	
+	def concatenate_trajectories_sequential(self, trajectory_files: List[str], 
+										  rest_duration: float = 2.0) -> Dict:
+		"""
+		拼接轨迹 - 单个轴序列运动 (一个轴动完再动下一个轴)
+		
+		Args:
+			trajectory_files: 轨迹文件路径列表
+			rest_duration: 轨迹间的静止时间 (秒)
+			
+		Returns:
+			拼接后的轨迹
+		"""
+		print(f"开始序列拼接 {len(trajectory_files)} 个轨迹文件...")
+		
+		all_trajectories = []
+		for filename in trajectory_files:
+			traj = self.load_trajectory(filename)
+			all_trajectories.append(traj)
+			print(f"  加载: {filename}")
+		
+		# 计算总时长和采样参数
+		dt = all_trajectories[0]['time'][1] - all_trajectories[0]['time'][0]
+		rest_samples = int(rest_duration / dt)
+		
+		total_samples = 0
+		for traj in all_trajectories:
+			total_samples += len(traj['time']) + rest_samples
+		total_samples -= rest_samples  # 最后一个轨迹后不需要静止时间
+		
+		# 初始化拼接后的数组
+		concatenated_time = np.zeros(total_samples)
+		concatenated_positions = np.zeros((total_samples, self.num_motors))
+		concatenated_velocities = np.zeros((total_samples, self.num_motors))
+		concatenated_accelerations = np.zeros((total_samples, self.num_motors))
+		
+		current_idx = 0
+		current_time = 0.0
+		
+		for i, traj in enumerate(all_trajectories):
+			traj_samples = len(traj['time'])
+			
+			# 添加轨迹数据
+			end_idx = current_idx + traj_samples
+			concatenated_time[current_idx:end_idx] = traj['time'] + current_time
+			concatenated_positions[current_idx:end_idx] = traj['positions']
+			concatenated_velocities[current_idx:end_idx] = traj['velocities']
+			concatenated_accelerations[current_idx:end_idx] = traj['accelerations']
+			
+			current_idx = end_idx
+			current_time += traj['time'][-1] + dt
+			
+			# 添加静止时间 (除了最后一个轨迹)
+			if i < len(all_trajectories) - 1:
+				rest_end_idx = current_idx + rest_samples
+				concatenated_time[current_idx:rest_end_idx] = np.arange(
+					current_time, current_time + rest_duration, dt
+				)
+				# 位置保持最后状态，速度和加速度为0
+				concatenated_positions[current_idx:rest_end_idx] = concatenated_positions[current_idx-1]
+				# 速度和加速度已经初始化为0
+				
+				current_idx = rest_end_idx
+				current_time += rest_duration
+		
+		return {
+			'time': concatenated_time,
+			'positions': concatenated_positions,
+			'velocities': concatenated_velocities,
+			'accelerations': concatenated_accelerations,
+			'source_files': trajectory_files,
+			'rest_duration': rest_duration,
+			'concatenation_type': 'sequential'
+		}
+	
+	def concatenate_trajectories_simultaneous(self, trajectory_files: List[str]) -> Dict:
+		"""
+		拼接轨迹 - 多轴同时运动 (所有轴的轨迹直接叠加)
+		
+		Args:
+			trajectory_files: 轨迹文件路径列表
+			
+		Returns:
+			拼接后的轨迹
+		"""
+		print(f"开始同时拼接 {len(trajectory_files)} 个轨迹文件...")
+		
+		all_trajectories = []
+		for filename in trajectory_files:
+			traj = self.load_trajectory(filename)
+			all_trajectories.append(traj)
+			print(f"  加载: {filename}")
+		
+		# 找到最长的时间序列
+		max_samples = max(len(traj['time']) for traj in all_trajectories)
+		reference_time = None
+		
+		for traj in all_trajectories:
+			if len(traj['time']) == max_samples:
+				reference_time = traj['time']
+				break
+		
+		# 初始化拼接后的数组
+		concatenated_positions = np.zeros((max_samples, self.num_motors))
+		concatenated_velocities = np.zeros((max_samples, self.num_motors))
+		concatenated_accelerations = np.zeros((max_samples, self.num_motors))
+		
+		# 叠加所有轨迹
+		for traj in all_trajectories:
+			traj_samples = len(traj['time'])
+			
+			# 如果轨迹长度不同，只取较短的部分
+			samples_to_use = min(traj_samples, max_samples)
+			
+			concatenated_positions[:samples_to_use] += traj['positions'][:samples_to_use]
+			concatenated_velocities[:samples_to_use] += traj['velocities'][:samples_to_use]
+			concatenated_accelerations[:samples_to_use] += traj['accelerations'][:samples_to_use]
+		
+		return {
+			'time': reference_time,
+			'positions': concatenated_positions,
+			'velocities': concatenated_velocities,
+			'accelerations': concatenated_accelerations,
+			'source_files': trajectory_files,
+			'concatenation_type': 'simultaneous'
+		}
+
 	def save_trajectory(self, trajectory: Dict, filename: str):
 		"""保存轨迹到文件"""
 		# 转换numpy数组为列表以便JSON序列化
@@ -501,24 +669,34 @@ def main():
 	
 	generator = TrajectoryGenerator()
 	
-	# 1. 生成单个电机轨迹 (从5号电机开始)
+	# 1. 生成单个电机轨迹 (包括1号电机)
 	print("1. 生成单个电机轨迹...")
-	for motor_id in [5, 4, 3, 2]:
+	motor_configs = {
+		1: {"min_angle": -30.0, "max_angle": -4.0},  # 1号电机: -30° 到 -4°
+		2: {"min_angle": -100.0, "max_angle": 30.0},  # 2号电机: -100° 到 +30°
+		3: {"amplitude": 90.0},  # 3号电机: 对称±90°
+		4: {"amplitude": 90.0},  # 4号电机: 对称±90°
+		5: {"amplitude": 90.0}   # 5号电机: 对称±90°
+	}
+	
+	for motor_id in [1, 2, 3, 4, 5]:
 		print(f"   生成电机 {motor_id} 的轨迹...")
-		if motor_id == 2:
-			# 2号电机使用自定义范围：-90° 到 +30°
+		config = motor_configs[motor_id]
+		
+		if "min_angle" in config and "max_angle" in config:
+			# 使用自定义范围
 			single_traj = generator.generate_single_motor_trajectory(
 				motor_id=motor_id,
 				duration=10.0,
 				num_cycles=2,
-				min_angle=-100.0,
-				max_angle=30.0
+				min_angle=config["min_angle"],
+				max_angle=config["max_angle"]
 			)
 		else:
-			# 其他电机使用默认的对称幅度
+			# 使用对称幅度
 			single_traj = generator.generate_single_motor_trajectory(
 				motor_id=motor_id,
-				amplitude=90.0,
+				amplitude=config["amplitude"],
 				duration=10.0,
 				num_cycles=2
 			)
@@ -527,27 +705,42 @@ def main():
 		filename = f"trajectory_motor_{motor_id}_single.json"
 		generator.save_trajectory(single_traj, filename)
 		
-		# 可视化第一个轨迹作为示例
-		if motor_id == 5:
-			generator.plot_trajectory(single_traj, f"Motor {motor_id} Single Trajectory")
+		# 可视化1号电机轨迹作为示例
+		if motor_id == 1:
+			generator.plot_trajectory(single_traj, f"Motor {motor_id} Single Trajectory (-30° to -4°)")
 	
-	# 2. 生成序列轨迹 (5-4-3-2)
-	print("\n2. 生成序列轨迹 (5-4-3-2)...")
-	sequential_traj = generator.generate_sequential_trajectories(
-		motor_sequence=[5, 4, 3, 2],
-		amplitude=90.0,
-		duration_per_motor=10.0,
+	# 2. 生成完整序列轨迹 (1-5-4-3-2)
+	print("\n2. 生成完整序列轨迹 (1-5-4-3-2)...")
+	
+	# 方法1: 使用文件拼接
+	trajectory_files = [
+		"trajectory_motor_1_single.json",
+		"trajectory_motor_5_single.json", 
+		"trajectory_motor_4_single.json",
+		"trajectory_motor_3_single.json",
+		"trajectory_motor_2_single.json"
+	]
+	
+	concatenated_traj = generator.concatenate_trajectories_sequential(
+		trajectory_files=trajectory_files,
 		rest_duration=2.0
 	)
 	
-	generator.save_trajectory(sequential_traj, "trajectory_sequential_5432.json")
-	generator.plot_trajectory(sequential_traj, "Sequential Trajectory (5-4-3-2)")
+	generator.save_trajectory(concatenated_traj, "trajectory_concatenated_sequential.json")
+	generator.plot_trajectory(concatenated_traj, "Complete Sequential Trajectory (1-5-4-3-2)")
 	
-	# 3. 生成复合轨迹
-	print("\n3. 生成复合激励轨迹...")
+	# 方法2: 同时运动轨迹
+	print("\n3. 生成同时运动轨迹...")
+	simultaneous_traj = generator.concatenate_trajectories_simultaneous(trajectory_files)
+	generator.save_trajectory(simultaneous_traj, "trajectory_concatenated_simultaneous.json")
+	generator.plot_trajectory(simultaneous_traj, "Simultaneous Multi-Motor Trajectory")
+	
+	# 4. 生成复合轨迹 (更新电机1范围)
+	print("\n4. 生成复合激励轨迹...")
 	complex_traj = generator.generate_complex_trajectory(
 		duration=30.0,
-		amplitudes=[90, 75, 60, 45, 30]
+		amplitudes=[90, 75, 60, 45, 30],  # 电机2-5的幅度
+		motor1_range=[-30, -4]  # 电机1在-30°到-4°范围内运动
 	)
 	
 	generator.save_trajectory(complex_traj, "trajectory_complex_multifreq.json")
@@ -555,12 +748,14 @@ def main():
 	
 	print("\n=== 轨迹生成完成 ===")
 	print("生成的文件:")
-	print("- trajectory_motor_5_single.json")
-	print("- trajectory_motor_4_single.json") 
-	print("- trajectory_motor_3_single.json")
-	print("- trajectory_motor_2_single.json")
-	print("- trajectory_sequential_5432.json")
-	print("- trajectory_complex_multifreq.json")
+	print("- trajectory_motor_1_single.json  (新增: -30° to -4°)")
+	print("- trajectory_motor_2_single.json  (-100° to +30°)")
+	print("- trajectory_motor_3_single.json  (±90°)")
+	print("- trajectory_motor_4_single.json  (±90°)")
+	print("- trajectory_motor_5_single.json  (±90°)")
+	print("- trajectory_concatenated_sequential.json  (1-5-4-3-2 序列)")
+	print("- trajectory_concatenated_simultaneous.json  (所有电机同时)")
+	print("- trajectory_complex_multifreq.json  (多频率复合轨迹)")
 
 if __name__ == "__main__":
 	main()
