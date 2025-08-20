@@ -33,7 +33,7 @@ class MuJoCoICARMSimulation:
 		if urdf_path is None:
 			current_dir = os.path.dirname(os.path.abspath(__file__))
 			# urdf_path = os.path.join(current_dir, 'ic_arm_urdf', 'urdf', 'ic1.1.2.urdf')
-			urdf_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm/urdf/ic_arm.urdf"
+			urdf_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/robot/urdf/robot.urdf"
 		self.urdf_path = urdf_path
 		
 		# Initialize IC ARM connection
@@ -51,11 +51,11 @@ class MuJoCoICARMSimulation:
 		
 		# Joint mapping from IC ARM motors to MuJoCo joints
 		self.joint_mapping = {
-			'm1': 'm1-l2',  # Motor 1 -> Joint 1
-			'm2': 'm2-l3',  # Motor 2 -> Joint 2
-			'm3': 'm3-l4',  # Motor 3 -> Joint 3
-			'm4': 'm4-l5',  # Motor 4 -> Joint 4
-			'm5': 'm5-l6'   # Motor 5 -> Joint 5
+			'm1': 'joint1',  # Motor 1 -> Joint 1
+			'm2': 'joint2',  # Motor 2 -> Joint 2
+			'm3': 'joint3',  # Motor 3 -> Joint 3
+			'm4': 'joint4',  # Motor 4 -> Joint 4
+			'm5': 'joint5'   # Motor 5 -> Joint 5
 		}
 		
 		# Get joint indices in MuJoCo model
