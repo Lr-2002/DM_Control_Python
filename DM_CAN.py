@@ -100,7 +100,7 @@ class MotorControl:
         if DM_Motor.SlaveID not in self.motors_map:
             print("controlMIT ERROR : Motor ID not found")
             return
-        # print('recv control data like this ', DM_Motor, kp, kd, q, dq, tau)
+        print('recv control data like this ', DM_Motor, kp, kd, q, dq, tau)
         kp_uint = float_to_uint(kp, 0, 500, 12)
         kd_uint = float_to_uint(kd, 0, 5, 12)
         MotorType = DM_Motor.MotorType
