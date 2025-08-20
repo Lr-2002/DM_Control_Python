@@ -33,7 +33,7 @@ motor_config = {
     'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 50, 'kd': 1.8, 'torque': 0},
 }
 motor_config_gc = {
-    'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
+    'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': -1.4},
     'm2': {'type': DM_Motor_Type.DM6248, 'id': 0x02, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
     'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
     'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
@@ -601,6 +601,14 @@ class ICARM:
     
     # ========== PUBLIC WRITE INTERFACES ==========
     
+    def set_joint_position_with_gc(self, joint_index, position_rad, velocity_rad_s=0.0):
+        if self.gc_flag:
+            tau = self.cal_gravity() 
+            self.set_joint_position(joint_index, position_rad, velocity_rad_s, tau)
+        else: 
+            self.set_joint_position(joint_index, position_rad, velocity_rad_s)
+            
+
     def set_joint_position(self, joint_index, position_rad, velocity_rad_s=0.0, torque_nm=0.0):
         """Set position of a single joint"""
         if 0 <= joint_index < 5:
