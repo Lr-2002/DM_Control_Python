@@ -11,6 +11,7 @@ import traceback
 import logging
 from typing import Dict, List, Optional, Tuple, Any, Union
 import serial
+from pin.gravity_compensation import Gravity_Compensation
 # DM_CAN imports
 from DM_CAN import DM_Motor_Type, MotorControl, Motor, DM_variable
 
@@ -22,7 +23,8 @@ from DM_CAN import DM_Motor_Type, MotorControl, Motor, DM_variable
 #     'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 35, 'kd': 1.5, 'torque': 0.5},
 # }
 motor_config = {
-    'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 60, 'kd': 3, 'torque': 0},
+    'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 60, 'kd': 3, 'torque': -8},
+    # 'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': -5},
     'm2': {'type': DM_Motor_Type.DM4340, 'id': 0x02, 'master_id': 0x00, 'kp': 65, 'kd': 1.8, 'torque': 0},
     'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 55, 'kd': 1.5, 'torque': 0},
     'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 45, 'kd': 1.5, 'torque': 0},
@@ -72,11 +74,11 @@ def validate_array(array: np.ndarray, expected_shape: Tuple, name: str) -> bool:
     return True
 
 class ICARM:
-    def __init__(self, port='/dev/cu.usbmodem00000000050C1', baudrate=921600, debug=True):
+    def __init__(self, port='/dev/cu.usbmodem00000000050C1', baudrate=921600, debug=True, gc=False):
         """Initialize IC ARM with refactored interface and debug support"""
         self.debug = debug
         debug_print("=== 初始化IC_ARM_Refactored ===")
-        
+ 
         try:
             # Hardware setup
             debug_print(f"设置硬件连接: {port}, {baudrate}")
@@ -138,7 +140,15 @@ class ICARM:
             self.enable()
             self._read_motor_info()
             debug_print("✓ IC_ARM_Refactored 初始化完成")
-            
+            # breakpoint()
+            self.gc_flag = False 
+            # if self.gc_flag:
+            #     self.gc = Gravity_Compensation(
+            #         urdf='/Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm/urdf/ic_arm.urdf',
+            #         gravity_direction='-z'
+            #     )
+            #     print('启动了重力补偿')
+            #     input('go on')
         except Exception as e:
             debug_print(f"✗ 初始化失败: {e}", 'ERROR')
             debug_print(f"详细错误: {traceback.format_exc()}", 'ERROR')
@@ -1017,6 +1027,18 @@ class ICARM:
         except Exception as e:
             debug_print(f"设置 {motor_name} 零点失败: {e}", 'ERROR')
             return False
+    def cal_gravity(self):
+        """计算当前关节位置的重力补偿力矩"""
+        # 获取当前硬件关节位置（5维）
+        current_positions = self.get_joint_positions()
+        
+        # 使用重力补偿计算（自动处理5维->10维->5维映射）
+        tau_gravity = self.gc.compute_gravity_torque(current_positions)
+        
+        print(f"硬件关节位置: {current_positions}")
+        print(f"重力补偿力矩: {tau_gravity}")
+        
+        return tau_gravity 
     
     def pseudo_gravity_compensation(self, update_rate=50.0, duration=None, 
                                    kp_scale=1.0, kd_scale=1.0, enable_logging=True):
@@ -1242,6 +1264,8 @@ class ICARM:
                     
                     print(f"\r[{elapsed_time:6.1f}s] 位置: [{pos_str}] 速度: [{vel_str}]", end="", flush=True)
                     
+                    if self.gc_flag:
+                        self.cal_gravity()
                     # 保存到CSV
                     if save_csv and csv_writer:
                         timestamp = datetime.now().isoformat()
@@ -1251,6 +1275,8 @@ class ICARM:
                     
                 except Exception as e:
                     print(f"\n读取状态时出错: {e}")
+                    import traceback
+                    traceback.print_exc()
                     continue
                 
                 # 等待下次更新
@@ -1303,7 +1329,7 @@ class ICARM:
                 status = "FAIL"
 
                 print(e)
-                
+            time.sleep(0.001)
             print(f"{motor_name:<8} {motor.SlaveID:<4} {pmax:<12} {vmax:<12} {tmax:<12} {status:<10}")
         
         print("="*80)
