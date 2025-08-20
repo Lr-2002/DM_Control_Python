@@ -1094,7 +1094,7 @@ class ICARM:
                 self._refresh_all_states()
                 
                 # 计算重力补偿力矩
-                tau_compensation = self.cal_gravity_coriolis()
+                tau_compensation = self.cal_gravity()
                 if tau_compensation.ndim > 1:
                     tau_compensation = tau_compensation.flatten()
                 
