@@ -45,8 +45,8 @@ def main():
 
     try:
         # Initialize ICARM
-        arm = ICARM()
-
+        arm = ICARM(debug=False, gc=False)
+        arm.enable()
         # Start continuous position monitoring with CSV support
         arm.monitor_positions_continuous(
             update_rate=args.rate,
@@ -101,7 +101,7 @@ def interactive_main():
     print("\n按 Ctrl+C 停止监控\n")
 
     try:
-        arm = ICARM()
+        arm = ICARM(debug=False, gc=True)
         arm.monitor_positions_continuous(
             update_rate=update_rate,
             duration=duration,
