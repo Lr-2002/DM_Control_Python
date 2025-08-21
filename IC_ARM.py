@@ -25,7 +25,7 @@ from DM_CAN import DM_Motor_Type, MotorControl, Motor, DM_variable
 #     'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 35, 'kd': 1.5, 'torque': 0.5},
 # }
 motor_config = {
-	'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': -10},
+	'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 100, 'kd': 3, 'torque': -1.2},
 	# 'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': -5},
 	'm2': {'type': DM_Motor_Type.DM6248, 'id': 0x02, 'master_id': 0x00, 'kp': 65, 'kd': 1.8, 'torque': 0},
 	'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 55, 'kd': 1.5, 'torque': 0},
@@ -52,6 +52,7 @@ def safe_call(func, *args, **kwargs) -> Tuple[Any, Optional[str]]:
 	"""安全函数调用，返回(结果, 错误信息)"""
 	try:
 		result = func(*args, **kwargs)
+		time.sleep(0.0002)
 		return result, None
 	except Exception as e:
 		error_msg = f"{func.__name__}() 失败: {str(e)}"
@@ -203,6 +204,7 @@ class ICARM:
 			
 			# 安全调用刷新状态
 			result, error = safe_call(self.mc.refresh_motor_status, motor)
+			# time.sleep(0.0002)
 			if error:
 				debug_print(f"刷新电机 {motor_name} 状态失败: {error}", 'ERROR')
 				return 0.0
@@ -590,7 +592,7 @@ class ICARM:
 				debug_print(f"Sending command to motor {motor_name}: kp={kp}, kd={kd}, position={position_rad}, velocity={velocity_rad_s}, torque={torque}")
 				self.mc.controlMIT(motor, kp, kd, position_rad, velocity_rad_s, torque)
 				
-				time.sleep(0.0002)
+				# time.sleep(0.0002)
 				return True
 			else:
 				print("Motor not found in configuration")

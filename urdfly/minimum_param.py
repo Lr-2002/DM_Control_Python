@@ -12,6 +12,8 @@ from scipy.linalg import qr
 import matplotlib.pyplot as plt
 from regressor import CalcDynamics
 import os
+import glob
+import time
 from datetime import datetime
 
 class MinimumParameterIdentification:
@@ -180,7 +182,7 @@ class MinimumParameterIdentification:
         print(f"回归器矩阵形状: {A_N.shape}")
         return A_N
     
-    def identify_base_parameters(self, A_N, tau_N, tolerance=1e-8, regularization=1e-6, method='fast_svd'):
+    def identify_base_parameters(self, A_N, tau_N, tolerance=1e-6, regularization=1e-3, method='fast_svd'):
         """
         使用多种方法进行基参数辨识
         
@@ -232,7 +234,7 @@ class MinimumParameterIdentification:
                 self.base_columns = np.argsort(s)[::-1][:rank]
                 
         elif method == 'correlation':
-            # 基于相关性的快速列选择
+            # 改进的相关性方法 - 更严格的条件数控制
             print("执行相关性分析...")
             # 计算每列与力矩向量的相关性
             correlations = np.abs([np.corrcoef(A_N[:, i], tau_N)[0, 1] for i in range(A_N.shape[1])])
@@ -241,14 +243,24 @@ class MinimumParameterIdentification:
             # 选择相关性最高的列
             sorted_indices = np.argsort(correlations)[::-1]
             
-            # 逐步添加列，检查条件数
+            # 逐步添加列，使用更严格的条件数控制
             selected_cols = []
+            max_condition = 1e6  # 降低条件数阈值
+            
             for idx in sorted_indices:
                 test_cols = selected_cols + [idx]
                 A_test = A_N[:, test_cols]
-                if len(test_cols) == 1 or np.linalg.cond(A_test.T @ A_test) < 1e12:
+                
+                if len(test_cols) == 1:
                     selected_cols.append(idx)
-                if len(selected_cols) >= min(40, A_N.shape[1]):  # 限制最大列数
+                else:
+                    cond_num = np.linalg.cond(A_test.T @ A_test)
+                    if cond_num < max_condition:
+                        selected_cols.append(idx)
+                    else:
+                        print(f"跳过列{idx}，条件数过大: {cond_num:.2e}")
+                
+                if len(selected_cols) >= min(30, A_N.shape[1]):  # 减少最大列数
                     break
             
             self.base_columns = np.array(selected_cols)
@@ -267,14 +279,31 @@ class MinimumParameterIdentification:
         self.P_matrix = np.zeros((n_params, rank))
         self.P_matrix[self.base_columns, :] = np.eye(rank)
         
-        # 使用正则化最小二乘求解基参数
+        # 使用改进的正则化最小二乘求解基参数
         # 根据公式(20): Θ = A_N^†(q_N, q̇_N, q̈_N) × τ_N
         print("求解基参数...")
         
-        # 方法1: 正则化最小二乘
-        ATA = A_b.T @ A_b
-        ATb = A_b.T @ tau_N
-        theta_b = np.linalg.solve(ATA + regularization * np.eye(rank), ATb)
+        # 数据预处理：标准化回归器矩阵
+        A_b_mean = np.mean(A_b, axis=0)
+        A_b_std = np.std(A_b, axis=0) + 1e-8  # 避免除零
+        A_b_normalized = (A_b - A_b_mean) / A_b_std
+        
+        # 方法1: 改进的正则化最小二乘
+        ATA = A_b_normalized.T @ A_b_normalized
+        ATb = A_b_normalized.T @ tau_N
+        
+        # 自适应正则化：基于条件数调整
+        cond_num = np.linalg.cond(ATA)
+        if cond_num > 1e8:
+            adaptive_reg = regularization * cond_num / 1e8
+            print(f"使用自适应正则化: {adaptive_reg:.2e} (条件数: {cond_num:.2e})")
+        else:
+            adaptive_reg = regularization
+        
+        theta_b_norm = np.linalg.solve(ATA + adaptive_reg * np.eye(rank), ATb)
+        
+        # 反标准化参数
+        theta_b = theta_b_norm / A_b_std
         
         # 方法2: 伪逆（作为对比）
         theta_b_pinv = pinv(A_b) @ tau_N
@@ -530,15 +559,232 @@ def compare_methods(data_file, max_points=1000):
     
     return results
 
+def load_all_dynamics_data(data_dir="/Users/lr-2002/project/instantcreation/IC_arm_control/dyn_ana"):
+    """
+    加载指定目录下的所有动力学数据CSV文件并合并
+    
+    Args:
+        data_dir: 数据目录路径
+        
+    Returns:
+        合并后的DataFrame，如果没有找到文件则返回None
+    """
+    import os
+    import glob
+    
+    # 查找所有CSV文件
+    csv_pattern = os.path.join(data_dir, "dynamics_data_*.csv")
+    csv_files = glob.glob(csv_pattern)
+    
+    if not csv_files:
+        print(f"在目录 {data_dir} 中未找到动力学数据文件")
+        return None
+    
+    print(f"找到 {len(csv_files)} 个动力学数据文件:")
+    combined_data = []
+    
+    for i, csv_file in enumerate(sorted(csv_files)):
+        filename = os.path.basename(csv_file)
+        print(f"  {i+1}. {filename}")
+        
+        try:
+            # 读取CSV文件
+            df = pd.read_csv(csv_file)
+            
+            # 添加文件标识列
+            df['data_source'] = filename
+            df['file_index'] = i
+            
+            combined_data.append(df)
+            print(f"     ✓ 加载成功: {len(df)} 个数据点")
+            
+        except Exception as e:
+            print(f"     ✗ 加载失败: {e}")
+            continue
+    
+    if not combined_data:
+        print("所有文件加载失败")
+        return None
+    
+    # 合并所有数据
+    print(f"\n合并 {len(combined_data)} 个数据文件...")
+    merged_df = pd.concat(combined_data, ignore_index=True)
+    
+    print(f"✓ 合并完成: 总共 {len(merged_df)} 个数据点")
+    print(f"  数据时间跨度: {merged_df['time'].min():.2f}s - {merged_df['time'].max():.2f}s")
+    print(f"  数据来源文件数: {merged_df['file_index'].nunique()}")
+    
+    return merged_df
+
+def run_comprehensive_identification(data_dir="/Users/lr-2002/project/instantcreation/IC_arm_control/dyn_ana", 
+                                   max_points=None, method='correlation'):
+    """
+    使用所有可用数据进行综合参数辨识
+    
+    Args:
+        data_dir: 数据目录路径
+        max_points: 最大使用数据点数（None表示使用所有数据）
+        method: 辨识方法
+        
+    Returns:
+        辨识器实例
+    """
+    print("=== IC ARM 综合动力学参数辨识 ===\n")
+    
+    # 加载所有数据
+    combined_data = load_all_dynamics_data(data_dir)
+    if combined_data is None:
+        return None
+    
+    # 限制数据点数（如果指定）
+    if max_points and len(combined_data) > max_points:
+        print(f"\n数据点过多，随机采样 {max_points} 个点进行辨识...")
+        combined_data = combined_data.sample(n=max_points, random_state=42).reset_index(drop=True)
+        print(f"✓ 采样完成: {len(combined_data)} 个数据点")
+    
+    # 数据统计信息
+    print(f"\n=== 数据统计信息 ===")
+    print(f"总数据点数: {len(combined_data)}")
+    print(f"数据来源文件: {combined_data['file_index'].nunique()} 个")
+    print(f"时间范围: {combined_data['time'].min():.2f}s - {combined_data['time'].max():.2f}s")
+    
+    # 显示各电机的数据范围
+    for motor_id in range(1, 6):
+        pos_col = f'm{motor_id}_pos_actual'
+        if pos_col in combined_data.columns:
+            pos_data = combined_data[pos_col]
+            pos_range = np.degrees([pos_data.min(), pos_data.max()])
+            print(f"电机 {motor_id} 位置范围: {pos_range[0]:.1f}° ~ {pos_range[1]:.1f}°")
+    
+    # 执行参数辨识
+    print(f"\n=== 开始参数辨识 (方法: {method}) ===")
+    
+    try:
+        # 创建辨识器
+        identifier = MinimumParameterIdentification()
+        
+        # 保存合并数据到临时CSV文件
+        temp_csv_file = "temp_combined_data.csv"
+        combined_data.to_csv(temp_csv_file, index=False)
+        print(f"✓ 临时数据文件已创建: {temp_csv_file}")
+        
+        # 加载数据
+        q, dq, ddq, tau = identifier.load_motion_data(temp_csv_file)
+        print(f"✓ 数据加载完成")
+        
+        # 构建回归器矩阵
+        print(f"构建回归器矩阵...")
+        A_N = identifier.build_regressor_matrix(q, dq, ddq)
+        tau_N = tau.flatten()
+        
+        # 执行辨识
+        start_time = time.time()
+        params = identifier.identify_base_parameters(A_N, tau_N, method=method)
+        identification_time = time.time() - start_time
+        
+        if params is not None:
+            print(f"✓ 参数辨识成功!")
+            print(f"  辨识时间: {identification_time:.2f}s")
+            print(f"  辨识参数数量: {len(params)}")
+            print(f"  参数范围: [{params.min():.6f}, {params.max():.6f}]")
+            
+            # 保存结果
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            result_file = f"identification_results/comprehensive_params_{timestamp}.npz"
+            
+            # 手动保存结果
+            os.makedirs("identification_results", exist_ok=True)
+            np.savez(result_file, 
+                    identified_params=params,
+                    base_columns=identifier.base_columns if hasattr(identifier, 'base_columns') else None,
+                    identification_time=identification_time,
+                    method=method,
+                    data_points=len(combined_data))
+            print(f"✓ 结果已保存到: {result_file}")
+            
+            # 生成综合报告
+            report_file = f"identification_results/comprehensive_report_{timestamp}.txt"
+            generate_comprehensive_report(identifier, combined_data, report_file, params, identification_time)
+            print(f"✓ 综合报告已保存到: {report_file}")
+            
+        else:
+            print("✗ 参数辨识失败")
+            return None
+            
+    except Exception as e:
+        print(f"✗ 辨识过程出错: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+    
+    return identifier
+
+def generate_comprehensive_report(identifier, data_df, report_file, params, identification_time):
+    """生成综合辨识报告"""
+    with open(report_file, 'w', encoding='utf-8') as f:
+        f.write("=== IC ARM 综合动力学参数辨识报告 ===\n\n")
+        f.write(f"生成时间: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        
+        # 数据信息
+        f.write("【数据信息】\n")
+        f.write(f"总数据点数: {len(data_df)}\n")
+        f.write(f"数据来源文件数: {data_df['file_index'].nunique()}\n")
+        f.write(f"时间跨度: {data_df['time'].min():.2f}s - {data_df['time'].max():.2f}s\n")
+        
+        # 各文件贡献
+        f.write(f"\n【各文件数据贡献】\n")
+        file_stats = data_df.groupby('data_source').size().sort_values(ascending=False)
+        for filename, count in file_stats.items():
+            percentage = (count / len(data_df)) * 100
+            f.write(f"{filename}: {count} 点 ({percentage:.1f}%)\n")
+        
+        # 电机运动范围
+        f.write(f"\n【电机运动范围】\n")
+        for motor_id in range(1, 6):
+            pos_col = f'm{motor_id}_pos_actual'
+            if pos_col in data_df.columns:
+                pos_data = data_df[pos_col]
+                pos_range = np.degrees([pos_data.min(), pos_data.max()])
+                pos_std = np.degrees(pos_data.std())
+                f.write(f"电机 {motor_id}: {pos_range[0]:.1f}° ~ {pos_range[1]:.1f}° (标准差: {pos_std:.1f}°)\n")
+        
+        # 辨识结果
+        if params is not None:
+            f.write(f"\n【辨识结果】\n")
+            f.write(f"辨识时间: {identification_time:.2f}s\n")
+            f.write(f"参数数量: {len(params)}\n")
+            f.write(f"参数范围: [{params.min():.6f}, {params.max():.6f}]\n")
+            f.write(f"参数标准差: {params.std():.6f}\n")
+            f.write(f"参数均值: {params.mean():.6f}\n")
+            
+            # 参数分布统计
+            f.write(f"\n【参数分布统计】\n")
+            f.write(f"正参数数量: {np.sum(params > 0)}\n")
+            f.write(f"负参数数量: {np.sum(params < 0)}\n")
+            f.write(f"零参数数量: {np.sum(np.abs(params) < 1e-10)}\n")
+        
+        f.write(f"\n报告生成完成。\n")
+
 if __name__ == "__main__":
-    # 示例：使用CSV数据文件进行辨识
-    data_file = "/Users/lr-2002/project/instantcreation/IC_arm_control/dynamics_data_20250820_204957.csv"
+    # 综合参数辨识：使用所有可用数据
+    data_dir = "/Users/lr-2002/project/instantcreation/IC_arm_control/dyn_ana"
     
-    # 性能比较测试
-    print("首先进行方法性能比较...")
-    compare_methods(data_file, max_points=5000)
+    print("=== IC ARM 综合动力学参数辨识 ===\n")
     
-    print("\n" + "="*60)
+    # 首先进行方法性能比较（使用部分数据）
+    print("1. 方法性能比较测试...")
+    sample_files = glob.glob(os.path.join(data_dir, "dynamics_data_*.csv"))
+    if sample_files:
+        sample_file = sample_files[0]  # 使用第一个文件进行测试
+        print(f"使用样本文件: {os.path.basename(sample_file)}")
+        compare_methods(sample_file, max_points=3000)
     
-    # # 使用最快的方法进行完整辨识
-    identifier = run_identification_example(data_file, max_points=10000, method='correlation')
+    print("\n" + "="*80)
+    
+    # 综合辨识：使用所有数据
+    print("\n2. 综合参数辨识...")
+    identifier = run_comprehensive_identification(
+        data_dir=data_dir, 
+        max_points=15000,  # 限制最大数据点数以控制计算时间
+        method='correlation'  # 使用改进的相关性方法
+    )
