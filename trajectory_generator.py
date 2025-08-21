@@ -225,25 +225,377 @@ class TrajectoryGenerator:
 			'amplitude_deg': amplitude
 		}
 	
+	def generate_chirp_trajectory(self, duration: float = 20.0, 
+								 motor_configs: Dict = None,
+								 freq_range: List[float] = [0.05, 0.5]) -> Dict:
+		"""
+		生成扫频轨迹 (频率从低到高线性变化)
+		
+		Args:
+			duration: 轨迹持续时间
+			motor_configs: 电机配置字典，包含每个电机的运动范围或幅度
+			freq_range: 频率范围 [start_freq, end_freq] (Hz)
+			
+		Returns:
+			扫频轨迹
+		"""
+		if motor_configs is None:
+			motor_configs = {
+				1: {"min_angle": -30.0, "max_angle": 4.0},
+				2: {"min_angle": -120.0, "max_angle": 40.0},
+				3: {"amplitude": 100.0},
+				4: {"amplitude": 100.0},
+				5: {"amplitude": 100.0}
+			}
+		
+		dt = 0.01
+		t = np.arange(0, duration, dt)
+		
+		all_positions = np.zeros((len(t), self.num_motors))
+		all_velocities = np.zeros((len(t), self.num_motors))
+		all_accelerations = np.zeros((len(t), self.num_motors))
+		
+		# 线性扫频参数
+		f0, f1 = freq_range
+		k = (f1 - f0) / duration  # 频率变化率
+		
+		for motor_idx in range(self.num_motors):
+			motor_id = motor_idx + 1
+			config = motor_configs.get(motor_id, {})
+			
+			# 每个电机使用不同的扫频范围
+			motor_f0 = f0 + motor_idx * 0.02
+			motor_f1 = f1 + motor_idx * 0.05
+			motor_k = (motor_f1 - motor_f0) / duration
+			
+			phase = 2 * np.pi * (motor_f0 * t + motor_k * t**2 / 2)
+			inst_freq = motor_f0 + motor_k * t
+			
+			if "min_angle" in config and "max_angle" in config:
+				# 电机1和2: 使用指定范围
+				min_angle_rad = np.radians(config["min_angle"])
+				max_angle_rad = np.radians(config["max_angle"])
+				center_rad = (min_angle_rad + max_angle_rad) / 2
+				amplitude_rad = (max_angle_rad - min_angle_rad) / 2
+				
+				position = center_rad + amplitude_rad * np.sin(phase)
+				velocity = amplitude_rad * 2 * np.pi * inst_freq * np.cos(phase)
+				acceleration = (amplitude_rad * 2 * np.pi * 
+							   (motor_k * np.cos(phase) - (2 * np.pi * inst_freq)**2 * np.sin(phase)))
+				
+			elif "amplitude" in config:
+				# 电机3-5: 使用对称幅度
+				amp_rad = np.radians(config["amplitude"])
+				
+				position = amp_rad * np.sin(phase)
+				velocity = amp_rad * 2 * np.pi * inst_freq * np.cos(phase)
+				acceleration = (amp_rad * 2 * np.pi * 
+							   (motor_k * np.cos(phase) - (2 * np.pi * inst_freq)**2 * np.sin(phase)))
+			
+			else:
+				# 默认配置
+				position = velocity = acceleration = np.zeros_like(t)
+			
+			all_positions[:, motor_idx] = position
+			all_velocities[:, motor_idx] = velocity
+			all_accelerations[:, motor_idx] = acceleration
+		
+		return {
+			'time': t,
+			'positions': all_positions,
+			'velocities': all_velocities,
+			'accelerations': all_accelerations,
+			'motor_configs': motor_configs,
+			'freq_range': freq_range,
+			'trajectory_type': 'chirp'
+		}
+	
+	def generate_random_trajectory(self, duration: float = 25.0,
+								  motor_configs: Dict = None,
+								  bandwidth: float = 0.3,
+								  seed: int = 42) -> Dict:
+		"""
+		生成随机轨迹 (带限白噪声)
+		
+		Args:
+			duration: 轨迹持续时间
+			motor_configs: 电机配置字典，包含每个电机的运动范围或幅度
+			bandwidth: 带宽限制 (Hz)
+			seed: 随机种子
+			
+		Returns:
+			随机轨迹
+		"""
+		np.random.seed(seed)
+		
+		if motor_configs is None:
+			motor_configs = {
+				1: {"min_angle": -30.0, "max_angle": 4.0},
+				2: {"min_angle": -120.0, "max_angle": 40.0},
+				3: {"amplitude": 100.0},
+				4: {"amplitude": 100.0},
+				5: {"amplitude": 100.0}
+			}
+		
+		dt = 0.01
+		t = np.arange(0, duration, dt)
+		N = len(t)
+		
+		all_positions = np.zeros((N, self.num_motors))
+		all_velocities = np.zeros((N, self.num_motors))
+		all_accelerations = np.zeros((N, self.num_motors))
+		
+		# 频域滤波生成带限随机信号
+		freqs = np.fft.fftfreq(N, dt)
+		
+		for motor_idx in range(self.num_motors):
+			motor_id = motor_idx + 1
+			config = motor_configs.get(motor_id, {})
+			
+			# 生成白噪声
+			noise = np.random.randn(N)
+			noise_fft = np.fft.fft(noise)
+			
+			# 带限滤波器
+			filter_mask = np.abs(freqs) <= bandwidth
+			filtered_fft = noise_fft * filter_mask
+			
+			# 逆变换得到时域信号
+			filtered_signal = np.real(np.fft.ifft(filtered_fft))
+			normalized_signal = filtered_signal / np.std(filtered_signal)
+			
+			if "min_angle" in config and "max_angle" in config:
+				# 电机1和2: 使用指定范围
+				min_angle_rad = np.radians(config["min_angle"])
+				max_angle_rad = np.radians(config["max_angle"])
+				center_rad = (min_angle_rad + max_angle_rad) / 2
+				amplitude_rad = (max_angle_rad - min_angle_rad) / 2
+				
+				position = center_rad + amplitude_rad * 0.5 * normalized_signal
+				
+			elif "amplitude" in config:
+				# 电机3-5: 使用对称幅度
+				amp_rad = np.radians(config["amplitude"])
+				position = amp_rad * 0.5 * normalized_signal
+			
+			else:
+				# 默认配置
+				position = np.zeros_like(t)
+			
+			# 数值求导得到速度和加速度
+			velocity = np.gradient(position, dt)
+			acceleration = np.gradient(velocity, dt)
+			
+			all_positions[:, motor_idx] = position
+			all_velocities[:, motor_idx] = velocity
+			all_accelerations[:, motor_idx] = acceleration
+		
+		return {
+			'time': t,
+			'positions': all_positions,
+			'velocities': all_velocities,
+			'accelerations': all_accelerations,
+			'motor_configs': motor_configs,
+			'bandwidth': bandwidth,
+			'seed': seed,
+			'trajectory_type': 'random'
+		}
+	
+	def generate_phase_shifted_trajectory(self, duration: float = 20.0,
+										 motor_configs: Dict = None,
+										 base_freq: float = 0.1) -> Dict:
+		"""
+		生成相位偏移轨迹 (各电机同频率但不同相位)
+		
+		Args:
+			duration: 轨迹持续时间
+			motor_configs: 电机配置字典，包含每个电机的运动范围或幅度
+			base_freq: 基础频率 (Hz)
+			
+		Returns:
+			相位偏移轨迹
+		"""
+		if motor_configs is None:
+			motor_configs = {
+				1: {"min_angle": -30.0, "max_angle": 4.0},
+				2: {"min_angle": -120.0, "max_angle": 40.0},
+				3: {"amplitude": 100.0},
+				4: {"amplitude": 100.0},
+				5: {"amplitude": 100.0}
+			}
+		
+		dt = 0.01
+		t = np.arange(0, duration, dt)
+		
+		all_positions = np.zeros((len(t), self.num_motors))
+		all_velocities = np.zeros((len(t), self.num_motors))
+		all_accelerations = np.zeros((len(t), self.num_motors))
+		
+		# 相位偏移 (每个电机相差72度 = 2π/5)
+		phase_shifts = [i * 2 * np.pi / 5 for i in range(5)]
+		
+		omega = 2 * np.pi * base_freq
+		
+		for motor_idx in range(self.num_motors):
+			motor_id = motor_idx + 1
+			config = motor_configs.get(motor_id, {})
+			phase = omega * t + phase_shifts[motor_idx]
+			
+			if "min_angle" in config and "max_angle" in config:
+				# 电机1和2: 使用指定范围
+				min_angle_rad = np.radians(config["min_angle"])
+				max_angle_rad = np.radians(config["max_angle"])
+				center_rad = (min_angle_rad + max_angle_rad) / 2
+				amplitude_rad = (max_angle_rad - min_angle_rad) / 2
+				
+				position = center_rad + amplitude_rad * np.sin(phase)
+				velocity = amplitude_rad * omega * np.cos(phase)
+				acceleration = -amplitude_rad * omega**2 * np.sin(phase)
+				
+			elif "amplitude" in config:
+				# 电机3-5: 使用对称幅度
+				amp_rad = np.radians(config["amplitude"])
+				position = amp_rad * np.sin(phase)
+				velocity = amp_rad * omega * np.cos(phase)
+				acceleration = -amp_rad * omega**2 * np.sin(phase)
+			
+			else:
+				# 默认配置
+				position = velocity = acceleration = np.zeros_like(t)
+			
+			all_positions[:, motor_idx] = position
+			all_velocities[:, motor_idx] = velocity
+			all_accelerations[:, motor_idx] = acceleration
+		
+		return {
+			'time': t,
+			'positions': all_positions,
+			'velocities': all_velocities,
+			'accelerations': all_accelerations,
+			'motor_configs': motor_configs,
+			'base_freq': base_freq,
+			'phase_shifts': phase_shifts,
+			'trajectory_type': 'phase_shifted'
+		}
+	
+	def generate_multi_harmonic_trajectory(self, duration: float = 25.0,
+										  motor_configs: Dict = None,
+										  fundamental_freq: float = 0.08) -> Dict:
+		"""
+		生成多谐波轨迹 (基频 + 多个谐波)
+		
+		Args:
+			duration: 轨迹持续时间
+			motor_configs: 电机配置字典，包含每个电机的运动范围或幅度
+			fundamental_freq: 基频 (Hz)
+			
+		Returns:
+			多谐波轨迹
+		"""
+		if motor_configs is None:
+			motor_configs = {
+				1: {"min_angle": -30.0, "max_angle": 4.0},
+				2: {"min_angle": -120.0, "max_angle": 40.0},
+				3: {"amplitude": 100.0},
+				4: {"amplitude": 100.0},
+				5: {"amplitude": 100.0}
+			}
+		
+		dt = 0.01
+		t = np.arange(0, duration, dt)
+		
+		all_positions = np.zeros((len(t), self.num_motors))
+		all_velocities = np.zeros((len(t), self.num_motors))
+		all_accelerations = np.zeros((len(t), self.num_motors))
+		
+		# 每个电机使用不同的谐波组合
+		harmonic_configs = [
+			[1, 3, 5],      # 电机1: 基频 + 3次 + 5次谐波
+			[1, 2, 4],      # 电机2: 基频 + 2次 + 4次谐波
+			[1, 3, 7],      # 电机3: 基频 + 3次 + 7次谐波
+			[1, 2, 5],      # 电机4: 基频 + 2次 + 5次谐波
+			[1, 4, 6]       # 电机5: 基频 + 4次 + 6次谐波
+		]
+		
+		for motor_idx in range(self.num_motors):
+			motor_id = motor_idx + 1
+			config = motor_configs.get(motor_id, {})
+			freq_set = harmonic_configs[motor_idx]
+			position = np.zeros_like(t)
+			velocity = np.zeros_like(t)
+			acceleration = np.zeros_like(t)
+			
+			if "min_angle" in config and "max_angle" in config:
+				# 电机1和2: 使用指定范围
+				min_angle_rad = np.radians(config["min_angle"])
+				max_angle_rad = np.radians(config["max_angle"])
+				center_rad = (min_angle_rad + max_angle_rad) / 2
+				amplitude_rad = (max_angle_rad - min_angle_rad) / 2
+				
+				for freq in freq_set:
+					omega = 2 * np.pi * fundamental_freq * freq
+					pos_component = center_rad + amplitude_rad * np.sin(omega * t) / len(freq_set)
+					vel_component = amplitude_rad * omega * np.cos(omega * t) / len(freq_set)
+					acc_component = -amplitude_rad * omega**2 * np.sin(omega * t) / len(freq_set)
+					
+					position += pos_component
+					velocity += vel_component
+					acceleration += acc_component
+					
+			elif "amplitude" in config:
+				# 电机3-5: 使用对称幅度
+				amp_rad = np.radians(config["amplitude"])
+				
+				for freq in freq_set:
+					omega = 2 * np.pi * fundamental_freq * freq
+					pos_component = amp_rad * np.sin(omega * t) / len(freq_set)
+					vel_component = amp_rad * omega * np.cos(omega * t) / len(freq_set)
+					acc_component = -amp_rad * omega**2 * np.sin(omega * t) / len(freq_set)
+					
+					position += pos_component
+					velocity += vel_component
+					acceleration += acc_component
+			
+			else:
+				# 默认配置
+				position = velocity = acceleration = np.zeros_like(t)
+			# 移除这个重复的中心偏移，已经在上面处理了
+			
+			all_positions[:, motor_idx] = position
+			all_velocities[:, motor_idx] = velocity
+			all_accelerations[:, motor_idx] = acceleration
+		
+		return {
+			'time': t,
+			'positions': all_positions,
+			'velocities': all_velocities,
+			'accelerations': all_accelerations,
+			'motor_configs': motor_configs,
+			'fundamental_freq': fundamental_freq,
+			'harmonic_configs': harmonic_configs,
+			'trajectory_type': 'multi_harmonic'
+		}
+	
 	def generate_complex_trajectory(self, duration: float = 30.0, 
-								  amplitudes: List[float] = None,
-								  motor1_range: List[float] = None) -> Dict:
+								  motor_configs: Dict = None) -> Dict:
 		"""
 		生成复合激励轨迹 (多个电机同时运动，不同频率)
 		
 		Args:
 			duration: 轨迹持续时间
-			amplitudes: 各电机的幅度列表 (仅用于电机2-5)
-			motor1_range: 电机1的运动范围 [min_angle, max_angle] (度)
+			motor_configs: 电机配置字典，包含每个电机的运动范围或幅度
 			
 		Returns:
 			复合轨迹
 		"""
-		if amplitudes is None:
-			amplitudes = [90, 75, 60, 45, 30]  # 不同电机不同幅度
-		
-		if motor1_range is None:
-			motor1_range = [-30, 0]  # 电机1默认范围: -30° 到 0°
+		if motor_configs is None:
+			motor_configs = {
+				1: {"min_angle": -30.0, "max_angle": 4.0},
+				2: {"min_angle": -120.0, "max_angle": 40.0},
+				3: {"amplitude": 100.0},
+				4: {"amplitude": 100.0},
+				5: {"amplitude": 100.0}
+			}  # 电机1默认范围: -30° 到 0°
 		
 		dt = 0.01
 		t = np.arange(0, duration, dt)
@@ -262,59 +614,55 @@ class TrajectoryGenerator:
 		]
 		
 		for motor_idx in range(self.num_motors):
-			if motor_idx == 0:  # 电机1 (索引0) - 使用自定义范围
-				min_angle_rad = np.radians(motor1_range[0])
-				max_angle_rad = np.radians(motor1_range[1])
+			motor_id = motor_idx + 1
+			config = motor_configs.get(motor_id, {})
+			
+			position = np.zeros_like(t)
+			velocity = np.zeros_like(t)
+			acceleration = np.zeros_like(t)
+			
+			if "min_angle" in config and "max_angle" in config:
+				# 电机1和2: 使用指定范围
+				min_angle_rad = np.radians(config["min_angle"])
+				max_angle_rad = np.radians(config["max_angle"])
 				center_rad = (min_angle_rad + max_angle_rad) / 2
 				amplitude_rad = (max_angle_rad - min_angle_rad) / 2
 				
 				# 多频率组合，但在指定范围内
-				position = center_rad  # 从中心位置开始
-				velocity = 0
-				acceleration = 0
+				position = center_rad * np.ones_like(t)  # 从中心位置开始
 				
 				for freq in frequencies[motor_idx]:
 					omega = 2 * np.pi * freq
-					# 每个频率分量的权重
 					weight = 1.0 / len(frequencies[motor_idx])
 					
 					position += weight * amplitude_rad * np.sin(omega * t)
 					velocity += weight * amplitude_rad * omega * np.cos(omega * t)
 					acceleration += -weight * amplitude_rad * omega**2 * np.sin(omega * t)
 				
-				all_positions[:, motor_idx] = position
-				all_velocities[:, motor_idx] = velocity
-				all_accelerations[:, motor_idx] = acceleration
-				
-			elif motor_idx < len(amplitudes):  # 电机2-5 - 保持原有逻辑
-				amp_rad = np.radians(amplitudes[motor_idx])
-				
-				# 多频率组合
-				position = 0
-				velocity = 0
-				acceleration = 0
+			elif "amplitude" in config:
+				# 电机3-5: 使用对称幅度
+				amp_rad = np.radians(config["amplitude"])
 				
 				for freq in frequencies[motor_idx]:
 					omega = 2 * np.pi * freq
-					# 每个频率分量的权重
 					weight = 1.0 / len(frequencies[motor_idx])
 					
 					position += weight * amp_rad * np.sin(omega * t)
 					velocity += weight * amp_rad * omega * np.cos(omega * t)
 					acceleration += -weight * amp_rad * omega**2 * np.sin(omega * t)
-				
-				all_positions[:, motor_idx] = position
-				all_velocities[:, motor_idx] = velocity
-				all_accelerations[:, motor_idx] = acceleration
+			
+			all_positions[:, motor_idx] = position
+			all_velocities[:, motor_idx] = velocity
+			all_accelerations[:, motor_idx] = acceleration
 		
 		return {
 			'time': t,
 			'positions': all_positions,
 			'velocities': all_velocities,
 			'accelerations': all_accelerations,
-			'amplitudes_deg': amplitudes,
-			'motor1_range_deg': motor1_range,
-			'frequencies': frequencies
+			'motor_configs': motor_configs,
+			'frequencies': frequencies,
+			'trajectory_type': 'complex'
 		}
 	
 	def load_trajectory(self, filename: str) -> Dict:
@@ -665,18 +1013,18 @@ class TrajectoryGenerator:
 
 def main():
 	"""主函数 - 生成各种测试轨迹"""
-	print("=== IC ARM 动力学辨识轨迹生成器 ===\n")
+	print("=== IC ARM 动力学辨识轨迹生成器 (增强版) ===\n")
 	
 	generator = TrajectoryGenerator()
 	
 	# 1. 生成单个电机轨迹 (包括1号电机)
 	print("1. 生成单个电机轨迹...")
 	motor_configs = {
-		1: {"min_angle": -30.0, "max_angle": -4.0},  # 1号电机: -30° 到 -4°
-		2: {"min_angle": -100.0, "max_angle": 30.0},  # 2号电机: -100° 到 +30°
-		3: {"amplitude": 90.0},  # 3号电机: 对称±90°
-		4: {"amplitude": 90.0},  # 4号电机: 对称±90°
-		5: {"amplitude": 90.0}   # 5号电机: 对称±90°
+		1: {"min_angle": -30.0, "max_angle": 4.0},  # 1号电机: -30° 到 -4°
+		2: {"min_angle": -120.0, "max_angle": 30.0},  # 2号电机: -100° 到 +30°
+		3: {"amplitude": 100.0},  # 3号电机: 对称±90°
+		4: {"amplitude": 100.0},  # 4号电机: 对称±90°
+		5: {"amplitude": 100.0}   # 5号电机: 对称±90°
 	}
 	
 	for motor_id in [1, 2, 3, 4, 5]:
@@ -704,15 +1052,77 @@ def main():
 		# 保存轨迹
 		filename = f"trajectory_motor_{motor_id}_single.json"
 		generator.save_trajectory(single_traj, filename)
-		
-		# 可视化1号电机轨迹作为示例
-		if motor_id == 1:
-			generator.plot_trajectory(single_traj, f"Motor {motor_id} Single Trajectory (-30° to -4°)")
 	
-	# 2. 生成完整序列轨迹 (1-5-4-3-2)
-	print("\n2. 生成完整序列轨迹 (1-5-4-3-2)...")
+	# 2. 生成新的非同频轨迹类型
+	print("\n2. 生成扫频轨迹...")
+	chirp_traj = generator.generate_chirp_trajectory(
+		duration=20.0,
+		motor_configs=motor_configs,
+		freq_range=[0.05, 0.5]
+	)  # 从0.05Hz扫到0.5Hz
+	generator.save_trajectory(chirp_traj, "trajectory_chirp_sweep.json")
+	generator.plot_trajectory(chirp_traj, "Chirp Sweep Trajectory (0.05-0.5Hz)")
 	
-	# 方法1: 使用文件拼接
+	print("\n3. 生成随机轨迹...")
+	random_traj = generator.generate_random_trajectory(
+		duration=25.0,
+		motor_configs=motor_configs,
+		bandwidth=0.3,  # 0.3Hz带宽
+		seed=42
+	)
+	generator.save_trajectory(random_traj, "trajectory_random_bandlimited.json")
+	generator.plot_trajectory(random_traj, "Random Band-Limited Trajectory (0.3Hz BW)")
+	
+	print("\n4. 生成相位偏移轨迹...")
+	phase_shifted_traj = generator.generate_phase_shifted_trajectory(
+		duration=20.0,
+		motor_configs=motor_configs,
+		base_freq=0.1  # 0.1Hz基频，各电机相位偏移72°
+	)
+	generator.save_trajectory(phase_shifted_traj, "trajectory_phase_shifted.json")
+	generator.plot_trajectory(phase_shifted_traj, "Phase-Shifted Trajectory (72° shifts)")
+	
+	print("\n5. 生成多谐波轨迹...")
+	harmonic_traj = generator.generate_multi_harmonic_trajectory(
+		duration=25.0,
+		motor_configs=motor_configs,
+		fundamental_freq=0.08  # 0.08Hz基频 + 不同谐波组合
+	)
+	generator.save_trajectory(harmonic_traj, "trajectory_multi_harmonic.json")
+	generator.plot_trajectory(harmonic_traj, "Multi-Harmonic Trajectory")
+	
+	# 6. 生成不同参数的扫频轨迹
+	print("\n6. 生成高频扫频轨迹...")
+	chirp_high_traj = generator.generate_chirp_trajectory(
+		duration=15.0,
+		motor_configs=motor_configs,  # 使用统一配置
+		freq_range=[0.1, 1.0]  # 高频扫频
+	)
+	generator.save_trajectory(chirp_high_traj, "trajectory_chirp_high_freq.json")
+	
+	# 7. 生成不同种子的随机轨迹
+	print("\n7. 生成多个随机轨迹变种...")
+	for seed in [123, 456, 789]:
+		random_var_traj = generator.generate_random_trajectory(
+			duration=20.0,
+			motor_configs=motor_configs,
+			bandwidth=0.25,
+			seed=seed
+		)
+		generator.save_trajectory(random_var_traj, f"trajectory_random_seed_{seed}.json")
+	
+	# 8. 生成不同频率的相位偏移轨迹
+	print("\n8. 生成不同频率的相位偏移轨迹...")
+	for freq in [0.06, 0.12, 0.18]:
+		phase_var_traj = generator.generate_phase_shifted_trajectory(
+			duration=18.0,
+			motor_configs=motor_configs,
+			base_freq=freq
+		)
+		generator.save_trajectory(phase_var_traj, f"trajectory_phase_shifted_{freq:.2f}Hz.json")
+	
+	# 9. 生成原有的序列和同时轨迹
+	print("\n9. 生成序列轨迹...")
 	trajectory_files = [
 		"trajectory_motor_1_single.json",
 		"trajectory_motor_5_single.json", 
@@ -725,37 +1135,57 @@ def main():
 		trajectory_files=trajectory_files,
 		rest_duration=2.0
 	)
-	
 	generator.save_trajectory(concatenated_traj, "trajectory_concatenated_sequential.json")
-	generator.plot_trajectory(concatenated_traj, "Complete Sequential Trajectory (1-5-4-3-2)")
 	
-	# 方法2: 同时运动轨迹
-	print("\n3. 生成同时运动轨迹...")
+	print("\n10. 生成同时运动轨迹...")
 	simultaneous_traj = generator.concatenate_trajectories_simultaneous(trajectory_files)
 	generator.save_trajectory(simultaneous_traj, "trajectory_concatenated_simultaneous.json")
-	generator.plot_trajectory(simultaneous_traj, "Simultaneous Multi-Motor Trajectory")
 	
-	# 4. 生成复合轨迹 (更新电机1范围)
-	print("\n4. 生成复合激励轨迹...")
+	# 10. 生成复合轨迹
+	print("\n10. 生成复合激励轨迹...")
 	complex_traj = generator.generate_complex_trajectory(
 		duration=30.0,
-		amplitudes=[90, 75, 60, 45, 30],  # 电机2-5的幅度
-		motor1_range=[-30, -4]  # 电机1在-30°到-4°范围内运动
+		motor_configs=motor_configs
 	)
-	
 	generator.save_trajectory(complex_traj, "trajectory_complex_multifreq.json")
-	generator.plot_trajectory(complex_traj, "Complex Multi-Frequency Trajectory")
 	
 	print("\n=== 轨迹生成完成 ===")
 	print("生成的文件:")
-	print("- trajectory_motor_1_single.json  (新增: -30° to -4°)")
-	print("- trajectory_motor_2_single.json  (-100° to +30°)")
-	print("- trajectory_motor_3_single.json  (±90°)")
-	print("- trajectory_motor_4_single.json  (±90°)")
-	print("- trajectory_motor_5_single.json  (±90°)")
+	print("\n【单电机轨迹】")
+	print("- trajectory_motor_1_single.json  (-30° to -4°)")
+	print("- trajectory_motor_2_single.json  (-120° to +40°)")
+	print("- trajectory_motor_3_single.json  (±100°)")
+	print("- trajectory_motor_4_single.json  (±100°)")
+	print("- trajectory_motor_5_single.json  (±100°)")
+	
+	print("\n【非同频轨迹】")
+	print("- trajectory_chirp_sweep.json  (扫频 0.05-0.5Hz)")
+	print("- trajectory_chirp_high_freq.json  (高频扫频 0.1-1.0Hz)")
+	print("- trajectory_random_bandlimited.json  (随机 0.3Hz带宽)")
+	print("- trajectory_random_seed_123.json  (随机变种1)")
+	print("- trajectory_random_seed_456.json  (随机变种2)")
+	print("- trajectory_random_seed_789.json  (随机变种3)")
+	print("- trajectory_phase_shifted.json  (相位偏移 0.1Hz)")
+	print("- trajectory_phase_shifted_0.06Hz.json  (相位偏移变种1)")
+	print("- trajectory_phase_shifted_0.12Hz.json  (相位偏移变种2)")
+	print("- trajectory_phase_shifted_0.18Hz.json  (相位偏移变种3)")
+	print("- trajectory_multi_harmonic.json  (多谐波)")
+	
+	print("\n【组合轨迹】")
 	print("- trajectory_concatenated_sequential.json  (1-5-4-3-2 序列)")
 	print("- trajectory_concatenated_simultaneous.json  (所有电机同时)")
 	print("- trajectory_complex_multifreq.json  (多频率复合轨迹)")
+	
+	print(f"\n总计生成了 {5 + 7 + 3 + 3} = 18 个轨迹文件！")
+	print("\n这些轨迹涵盖了:")
+	print("✓ 单电机运动")
+	print("✓ 扫频激励 (线性变频)")
+	print("✓ 随机激励 (带限白噪声)")
+	print("✓ 相位偏移 (同频不同相)")
+	print("✓ 多谐波 (基频+谐波)")
+	print("✓ 序列运动")
+	print("✓ 同时运动")
+	print("✓ 多频率复合")
 
 if __name__ == "__main__":
 	main()

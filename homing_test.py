@@ -12,7 +12,7 @@ def main():
     """测试回零功能"""
     print("=== 测试IC ARM回零功能 ===\n")
     
-    arm = ICARM(debug=False)
+    arm = ICARM(debug=False, gc=True)
     
     try:
         print("1. 连接到IC ARM...")
@@ -44,7 +44,7 @@ def main():
         print("使用平滑轨迹回到零位...")
         
         # 执行回零操作
-        success = arm.home_to_zero(speed=0.1, timeout=30.0)
+        success = arm.home_to_zero(speed=0.3, timeout=30.0)
         
         if success:
             print("\n✓ 回零操作成功完成!")

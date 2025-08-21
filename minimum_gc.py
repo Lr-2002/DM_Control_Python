@@ -48,18 +48,16 @@ class MinimumGravityCompensation:
         print(f"  回归器库: {regressor_lib_path}")
         print(f"  参数文件: {param_file}")
         print(f"  基参数数量: {len(self.base_params)}")
-    
     def _find_latest_param_file(self):
         """查找最新的参数文件"""
-        results_dir = os.path.join(os.path.dirname(__file__), 'urdfly', 'identification_results')
-        
+        results_dir = os.path.join(os.path.dirname(__file__), 'identification_results')
         if not os.path.exists(results_dir):
             raise FileNotFoundError(f"参数结果目录不存在: {results_dir}")
         
         # 查找所有参数文件
         param_files = []
         for filename in os.listdir(results_dir):
-            if filename.startswith('identified_params_') and filename.endswith('.npz'):
+            if filename.startswith('comprehensive_params_') and filename.endswith('.npz'):
                 param_files.append(os.path.join(results_dir, filename))
         
         if not param_files:
@@ -73,12 +71,26 @@ class MinimumGravityCompensation:
         """加载辨识参数"""
         try:
             data = np.load(param_file)
-            base_params = data['theta_base']
-            base_columns = data['base_columns']
+            
+            # 检查文件中的键名，适配不同的参数文件格式
+            if 'theta_base' in data:
+                # 旧格式
+                base_params = data['theta_base']
+                base_columns = data['base_columns']
+            elif 'identified_params' in data:
+                # 新格式 (comprehensive_params_*.npz)
+                base_params = data['identified_params']
+                base_columns = data['base_columns'] if 'base_columns' in data else None
+            else:
+                # 检查所有可用的键
+                available_keys = list(data.keys())
+                raise ValueError(f"未找到参数数据，可用键: {available_keys}")
             
             print(f"成功加载参数:")
+            print(f'  参数位置: {param_file}')
             print(f"  参数数量: {len(base_params)}")
-            print(f"  基参数索引数量: {len(base_columns)}")
+            if base_columns is not None:
+                print(f"  基参数索引数量: {len(base_columns)}")
             print(f"  参数范围: [{base_params.min():.6f}, {base_params.max():.6f}]")
             print(f"  参数标准差: {base_params.std():.6f}")
             

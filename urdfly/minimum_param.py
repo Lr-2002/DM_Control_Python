@@ -786,5 +786,5 @@ if __name__ == "__main__":
     identifier = run_comprehensive_identification(
         data_dir=data_dir, 
         max_points=15000,  # 限制最大数据点数以控制计算时间
-        method='correlation'  # 使用改进的相关性方法
+        method='fast_svd'  # 使用改进的相关性方法
     )
