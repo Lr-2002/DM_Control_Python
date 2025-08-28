@@ -17,28 +17,44 @@ from minimum_gc import MinimumGravityCompensation as GC
 # DM_CAN imports
 from DM_CAN import DM_Motor_Type, MotorControl, Motor, DM_variable
 
+# ===== 全局配置 =====
+NUM_MOTORS = 6  # 电机数量
+
 # motor_config = {
-#     'm1': {'type': DM_Motor_Type.DM4340, 'id': 0x01, 'master_id': 0x00, 'kp': 60, 'kd': 1.5, 'torque': 0},
-#     'm2': {'type': DM_Motor_Type.DM4340, 'id': 0x02, 'master_id': 0x00, 'kp': 45, 'kd': 1.5, 'torque': 0.},
-#     'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 40, 'kd': 1.5, 'torque': 0.5},
-#     'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 38, 'kd': 1.5, 'torque': 0.0},
-#     'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 35, 'kd': 1.5, 'torque': 0.5},
+# 	'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 100, 'kd': 3, 'torque': 0},
+# 	# 'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': -5},
+# 	'm2': {'type': DM_Motor_Type.DM6248, 'id': 0x02, 'master_id': 0x00, 'kp': 65, 'kd': 1.8, 'torque': 0},
+# 	'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 55, 'kd': 1.5, 'torque': 0},
+# 	'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 70, 'kd': 1.9, 'torque': 0},
+# 	'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 50, 'kd': 1.8, 'torque': 0},
+# }
+# motor_config_gc = {
+# 	'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
+# 	'm2': {'type': DM_Motor_Type.DM6248, 'id': 0x02, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
+# 	'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
+# 	'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
+# 	'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
 # }
 motor_config = {
 	'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 100, 'kd': 3, 'torque': 0},
 	# 'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': -5},
-	'm2': {'type': DM_Motor_Type.DM6248, 'id': 0x02, 'master_id': 0x00, 'kp': 65, 'kd': 1.8, 'torque': 0},
-	'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 55, 'kd': 1.5, 'torque': 0},
-	'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 70, 'kd': 1.9, 'torque': 0},
-	'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 50, 'kd': 1.8, 'torque': 0},
+	'm2': {'type': DM_Motor_Type.DM4340, 'id': 0x0a, 'master_id': 0x00, 'kp': 55, 'kd': 1.5, 'torque': 0},
+	'm3': {'type': DM_Motor_Type.DM6248, 'id': 0x02, 'master_id': 0x00, 'kp': 65, 'kd': 1.8, 'torque': 0},
+	'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 70, 'kd': 1.9, 'torque': 0},
+	'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 50, 'kd': 1.8, 'torque': 0},
+	'm6': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 55, 'kd': 1.5, 'torque': 0},
 }
 motor_config_gc = {
 	'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
-	'm2': {'type': DM_Motor_Type.DM6248, 'id': 0x02, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
-	'm3': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
-	'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
-	'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
+	# 'm1': {'type': DM_Motor_Type.DM10010L, 'id': 0x01, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': -5},
+
+	'm2': {'type': DM_Motor_Type.DM4340, 'id': 0x0a, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
+	'm3': {'type': DM_Motor_Type.DM6248, 'id': 0x02, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
+	'm4': {'type': DM_Motor_Type.DM4340, 'id': 0x03, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
+	'm5': {'type': DM_Motor_Type.DM4340, 'id': 0x04, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
+	'm6': {'type': DM_Motor_Type.DM4340, 'id': 0x05, 'master_id': 0x00, 'kp': 0, 'kd': 0, 'torque': 0},
 }
+
 # ===== 辅助函数定义 =====
 
 def debug_print(msg: str, level: str = 'INFO'):
@@ -108,7 +124,7 @@ class ICARM:
 			
 			# Motor configuration
 			self.motor_config = motor_config  # 添加motor_config属性
-			self.motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
+			self.motor_names = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6']
 			self.motors = {}
 			
 			# Initialize motors
@@ -127,15 +143,15 @@ class ICARM:
 			
 			# State variables (all in radians and SI units) - 内部维护的状态变量
 			debug_print("初始化状态变量...")
-			self.q = np.zeros(5, dtype=np.float64)        # Joint positions (rad)
-			self.dq = np.zeros(5, dtype=np.float64)       # Joint velocities (rad/s)
-			self.ddq = np.zeros(5, dtype=np.float64)      # Joint accelerations (rad/s²)
-			self.tau = np.zeros(5, dtype=np.float64)      # Joint torques (N·m)
-			self.currents = np.zeros(5, dtype=np.float64) # Joint currents (A)
+			self.q = np.zeros(NUM_MOTORS, dtype=np.float64)        # Joint positions (rad)
+			self.dq = np.zeros(NUM_MOTORS, dtype=np.float64)       # Joint velocities (rad/s)
+			self.ddq = np.zeros(NUM_MOTORS, dtype=np.float64)      # Joint accelerations (rad/s²)
+			self.tau = np.zeros(NUM_MOTORS, dtype=np.float64)      # Joint torques (N·m)
+			self.currents = np.zeros(NUM_MOTORS, dtype=np.float64) # Joint currents (A)
 			
 			# History for numerical differentiation
-			self.q_prev = np.zeros(5, dtype=np.float64)
-			self.dq_prev = np.zeros(5, dtype=np.float64)
+			self.q_prev = np.zeros(NUM_MOTORS, dtype=np.float64)
+			self.dq_prev = np.zeros(NUM_MOTORS, dtype=np.float64)
 			self.last_update_time = time.time()
 			
 			# 验证状态变量
@@ -165,6 +181,8 @@ class ICARM:
 	
 	def _validate_internal_state(self):
 		"""验证内部状态变量的完整性"""
+		expected_shape = (NUM_MOTORS,)
+		
 		state_vars = {
 			'q': self.q,
 			'dq': self.dq, 
@@ -176,7 +194,7 @@ class ICARM:
 		}
 		
 		for name, var in state_vars.items():
-			if not validate_array(var, (5,), name):
+			if not validate_array(var, expected_shape, name):
 				raise ValueError(f"Invalid state variable {name}")
 		
 		debug_print("✓ 内部状态变量验证通过")
@@ -204,7 +222,6 @@ class ICARM:
 			
 			# 安全调用刷新状态
 			result, error = safe_call(self.mc.refresh_motor_status, motor)
-			# time.sleep(0.0002)
 			if error:
 				debug_print(f"刷新电机 {motor_name} 状态失败: {error}", 'ERROR')
 				return 0.0
@@ -315,21 +332,20 @@ class ICARM:
 	
 	def _read_all_positions_raw(self):
 		"""Read positions from all motors"""
-		positions = np.zeros(5)
-		motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
+		positions = np.zeros(NUM_MOTORS)
 		
-		for i, motor_name in enumerate(motor_names):
+		for i, motor_name in enumerate(self.motor_names):
 			if motor_name in self.motors:
+				# print(i, motor_name)
 				positions[i] = self._read_motor_position_raw(motor_name)
 		
 		return positions
 	
 	def _read_all_velocities_raw(self):
 		"""Read velocities from all motors"""
-		velocities = np.zeros(5)
-		motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
+		velocities = np.zeros(NUM_MOTORS)
 		
-		for i, motor_name in enumerate(motor_names):
+		for i, motor_name in enumerate(self.motor_names):
 			if motor_name in self.motors:
 				velocities[i] = self._read_motor_velocity_raw(motor_name)
 		
@@ -337,10 +353,9 @@ class ICARM:
 	
 	def _read_all_torques_raw(self):
 		"""Read torques from all motors"""
-		torques = np.zeros(5)
-		motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
+		torques = np.zeros(NUM_MOTORS)
 		
-		for i, motor_name in enumerate(motor_names):
+		for i, motor_name in enumerate(self.motor_names):
 			if motor_name in self.motors:
 				torques[i] = self._read_motor_torque_raw(motor_name)
 		
@@ -348,11 +363,11 @@ class ICARM:
 	
 	def _read_all_currents_raw(self):
 		"""Estimate currents from torques (DM_CAN doesn't provide direct current reading)"""
-		currents = np.zeros(5)
+		currents = np.zeros(NUM_MOTORS)
 		torques = self._read_all_torques_raw()
 		
 		# 估算电流（使用力矩常数，需要校准）
-		for i in range(5):
+		for i in range(NUM_MOTORS):
 			currents[i] = torques[i] / 0.1  # 假设力矩常数为0.1 N·m/A
 		
 		return currents
@@ -404,7 +419,7 @@ class ICARM:
 		dt = current_time - self.last_update_time
 		
 		# 快速读取位置（无调试输出）
-		for i, motor_name in enumerate(['m1', 'm2', 'm3', 'm4', 'm5']):
+		for i, motor_name in enumerate(self.motor_names):
 			if motor_name in self.motors:
 				motor = self.motors[motor_name]
 				# 快速刷新状态
@@ -434,7 +449,7 @@ class ICARM:
 		dt = current_time - self.last_update_time
 		
 		# 优化策略：逐个刷新但最小化操作
-		motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
+		motor_names =self.motor_names 
 		for i, motor_name in enumerate(motor_names):
 			if motor_name in self.motors:
 				motor = self.motors[motor_name]
@@ -521,7 +536,7 @@ class ICARM:
 						if not validate_type(value, (int, float), f'state.{key}'):
 							raise ValueError(f"Invalid timestamp type: {type(value)}")
 					else:
-						if not validate_array(value, (5,), f'state.{key}'):
+						if not validate_array(value, (NUM_MOTORS,), f'state.{key}'):
 							raise ValueError(f"Invalid state array {key}")
 						debug_print(f"    {key}: {value[:2]}... (shape: {value.shape}, dtype: {value.dtype})")
 			
@@ -537,11 +552,11 @@ class ICARM:
 			# 返回安全的默认状态
 			debug_print("返回安全的默认状态", 'WARNING')
 			return {
-				'positions': np.zeros(5, dtype=np.float64),
-				'velocities': np.zeros(5, dtype=np.float64),
-				'accelerations': np.zeros(5, dtype=np.float64),
-				'torques': np.zeros(5, dtype=np.float64),
-				'currents': np.zeros(5, dtype=np.float64),
+				'positions': np.zeros(NUM_MOTORS, dtype=np.float64),
+				'velocities': np.zeros(NUM_MOTORS, dtype=np.float64),
+				'accelerations': np.zeros(NUM_MOTORS, dtype=np.float64),
+				'torques': np.zeros(NUM_MOTORS, dtype=np.float64),
+				'currents': np.zeros(NUM_MOTORS, dtype=np.float64),
 				'timestamp': time.time()
 			}
 	
@@ -607,7 +622,7 @@ class ICARM:
 
 	def set_joint_position(self, joint_index, position_rad, velocity_rad_s=0.0, torque_nm=0.0):
 		"""Set position of a single joint"""
-		if 0 <= joint_index < 5:
+		if joint_index < NUM_MOTORS:
 			motor_name = self.motor_names[joint_index]
 			if motor_name in self.motors:
 				debug_print(f"Setting joint {joint_index} position to {position_rad} rad, velocity to {velocity_rad_s} rad/s, torque to {torque_nm} Nm")
@@ -622,10 +637,10 @@ class ICARM:
 	def set_joint_torque(self, torques_nm):
 		"""Set positions of all joints"""
 		if torques_nm is None:
-			torques_nm = np.zeros(5)
+			torques_nm = np.zeros(NUM_MOTORS)
 		
 		success = True
-		for i in range(min(5, len(torques_nm))):
+		for i in range(min(NUM_MOTORS, len(torques_nm))):
 			debug_print(f"Setting joint {i} torque to {torques_nm[i]} Nm")
 			result = self._send_motor_command_raw(
 				self.motors[self.motor_names[i]], 
@@ -646,13 +661,13 @@ class ICARM:
 	def set_joint_positions(self, positions_rad, velocities_rad_s=None, torques_nm=None):
 		"""Set positions of all joints"""
 		if velocities_rad_s is None:
-			velocities_rad_s = np.zeros(5)
+			velocities_rad_s = np.zeros(NUM_MOTORS)
 		if torques_nm is None:
-			torques_nm = np.zeros(5)
+			torques_nm = np.zeros(NUM_MOTORS)
 		
 		success = True
 		# breakpoint()
-		for i in range(min(5, len(positions_rad))):
+		for i in range(min(NUM_MOTORS, len(positions_rad))):
 			result = self.set_joint_position(
 				i, 
 				positions_rad[i], 
@@ -675,30 +690,28 @@ class ICARM:
 	
 	def enable_motor(self, joint_index):
 		"""Enable a single motor"""
-		if 0 <= joint_index < 5:
-			motor_name = self.motor_names[joint_index]
-			if motor_name in self.motors and not self.motors[motor_name].isEnable:
-				try:
-					self.mc.enable(self.motors[motor_name])
-					self.motors[motor_name].isEnable = True
-					print(f"Motor {motor_name} enabled")
-					return True
-				except Exception as e:
-					print(f"Failed to enable motor {motor_name}: {e}")
+		motor_name = self.motor_names[joint_index]
+		if motor_name in self.motors and not self.motors[motor_name].isEnable:
+			try:
+				self.mc.enable(self.motors[motor_name])
+				self.motors[motor_name].isEnable = True
+				print(f"Motor {motor_name} enabled")
+				return True
+			except Exception as e:
+				print(f"Failed to enable motor {motor_name}: {e}")
 		return False
 	
 	def disable_motor(self, joint_index):
 		"""Disable a single motor"""
-		if 0 <= joint_index < 5:
-			motor_name = self.motor_names[joint_index]
-			if motor_name in self.motors and self.motors[motor_name].isEnable:
-				try:
-					self.mc.disable(self.motors[motor_name])
-					self.motors[motor_name].isEnable = False
-					print(f"Motor {motor_name} disabled")
-					return True
-				except Exception as e:
-					print(f"Failed to disable motor {motor_name}: {e}")
+		motor_name = self.motor_names[joint_index]
+		if motor_name in self.motors and self.motors[motor_name].isEnable:
+			try:
+				self.mc.disable(self.motors[motor_name])
+				self.motors[motor_name].isEnable = False
+				print(f"Motor {motor_name} disabled")
+				return True
+			except Exception as e:
+				print(f"Failed to disable motor {motor_name}: {e}")
 		return False
 	
 	def enable(self):
@@ -711,7 +724,7 @@ class ICARM:
 		"""Enable all motors"""
 		print("Enabling all motors...")
 		success = True
-		for i in range(5):
+		for i in range(NUM_MOTORS):
 			result = self.enable_motor(i)
 			success = success and result
 		
@@ -724,7 +737,7 @@ class ICARM:
 		"""Disable all motors"""
 		print("Disabling all motors...")
 		success = True
-		for i in range(5):
+		for i in range(NUM_MOTORS):
 			result = self.disable_motor(i)
 			success = success and result
 		return success
@@ -788,11 +801,11 @@ class ICARM:
 			# 可视化轨迹
 			self._plot_trajectory_preview(trajectory_points, time_points, current_positions)
 			
-			# # 询问用户是否继续执行
-			# response = input('轨迹预览完成，是否继续执行? (y/n): ').lower().strip()
-			# if response != 'y':
-			# 	debug_print("用户取消轨迹执行")
-			# 	return False
+			# 询问用户是否继续执行
+			response = input('轨迹预览完成，是否继续执行? (y/n): ').lower().strip()
+			if response != 'y':
+				debug_print("用户取消轨迹执行")
+				return False
 			
 			start_time = time.time()
 			
@@ -873,11 +886,11 @@ class ICARM:
 			fig, axes = plt.subplots(2, 3, figsize=(15, 10))
 			fig.suptitle('IC ARM 回零轨迹预览', fontsize=16)
 			
-			motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
-			colors = ['red', 'blue', 'green', 'orange', 'purple']
+			motor_names = self.motor_names
+			colors = ['red', 'blue', 'green', 'orange', 'purple', 'pink']
 			
 			# 绘制每个关节的位置轨迹
-			for i in range(5):
+			for i in range(NUM_MOTORS):
 				row = i // 3
 				col = i % 3
 				ax = axes[row, col]
@@ -920,8 +933,8 @@ class ICARM:
 						   transform=ax_summary.transAxes, verticalalignment='top',
 						   bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
 			
-			plt.tight_layout()
-			plt.show(block=False)  # 非阻塞显示
+			# plt.tight_layout()
+			# plt.show(block=False)  # 非阻塞显示
 			
 			# 打印轨迹摘要
 			debug_print("=== 轨迹预览摘要 ===")
@@ -946,7 +959,7 @@ class ICARM:
 			debug_print(f"轨迹时长: {time_points[-1]:.2f}s")
 			debug_print(f"轨迹点数: {len(time_points)}")
 			
-			motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
+			motor_names = self.motor_names
 			for i, name in enumerate(motor_names):
 				start_deg = np.degrees(start_positions[i])
 				debug_print(f"{name}: {start_deg:6.1f}° → 0.0° (变化: {-start_deg:6.1f}°)")
@@ -1248,8 +1261,8 @@ class ICARM:
 			loop_count = 0
 			start_time = time.time()
 			last_log_time = start_time
-			max_position_change = np.zeros(5)
-			total_position_change = np.zeros(5)
+			max_position_change = np.zeros(NUM_MOTORS)
+			total_position_change = np.zeros(NUM_MOTORS)
 			
 			# 主控制循环
 			debug_print("开始重力补偿控制循环...")
@@ -1386,7 +1399,7 @@ class ICARM:
 			csv_file = open(csv_filename, 'w', newline='')
 			csv_writer = csv.writer(csv_file)
 			# 写入表头
-			headers = ['timestamp', 'time_s'] + [f'm{i+1}_pos_deg' for i in range(5)] + [f'm{i+1}_vel_deg_s' for i in range(5)]
+			headers = ['timestamp', 'time_s'] + [f'm{i+1}_pos_deg' for i in range(NUM_MOTORS)] + [f'm{i+1}_vel_deg_s' for i in range(NUM_MOTORS)]
 			csv_writer.writerow(headers)
 			print(f"CSV文件: {csv_filename}")
 		
@@ -1497,7 +1510,7 @@ class ICARM:
 		print(f"{'Joint':<8} {'Pos(deg)':<12} {'Vel(deg/s)':<12} {'Acc(deg/s²)':<15} {'Torque(Nm)':<12}")
 		print("-"*80)
 		
-		for i in range(5):
+		for i in range(NUM_MOTORS):
 			print(f"m{i+1:<7} {np.degrees(state['positions'][i]):<12.2f} "
 				  f"{np.degrees(state['velocities'][i]):<12.2f} "
 				  f"{np.degrees(state['accelerations'][i]):<15.2f} "
