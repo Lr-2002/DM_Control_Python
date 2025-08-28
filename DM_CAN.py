@@ -3,6 +3,7 @@ import numpy as np
 from enum import IntEnum
 from struct import unpack
 from struct import pack
+from typing import List, Optional
 
 class Motor:
     def __init__(self, MotorType, SlaveID, MasterID):
@@ -240,6 +241,14 @@ class MotorControl:
         self.__control_cmd(Motor, np.uint8(0xFE))
         sleep(0.1)
         self.recv()  # receive the data from serial port
+    def recv_raw(self):
+        ra = self.serial_.read_all()
+        print(len(ra))
+        print(ra)
+        data_recv = b''.join([self.data_save, ra])
+        packets = self.__extract_packets(data_recv)
+        return packets
+
 
     def recv(self):
         # 把上次没有解析完的剩下的也放进来
@@ -330,7 +339,9 @@ class MotorControl:
     def __control_cmd(self, Motor, cmd: np.uint8):
         data_buf = np.array([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, cmd], np.uint8)
         self.__send_data(Motor.SlaveID, data_buf)
-
+    def send_data(self, motor_id, data):
+       
+        self.__send_data(motor_id, data)
     def __send_data(self, motor_id, data):
         """
         send data to the motor 发送数据到电机
@@ -626,3 +637,293 @@ class Control_Type(IntEnum):
     POS_VEL = 2
     VEL = 3
     Torque_Pos = 4
+
+
+class ServoController:
+    """
+    舵机控制类 - 集成到DM_CAN系统中
+    支持3个舵机的位置和速度读写控制
+    协议更新:
+    - 0x06: 写入3个舵机角度 [a1, a2, b1, b2, c1, c2, xx, xx]
+    - 0x07: 读取舵机A,B的位置和速度 [pa1, pa2, va1, va2, pb1, pb2, vb1, vb2]
+    - 0x08: 读取舵机C的位置和速度 [pc1, pc2, vc1, vc2, xx, xx, xx, xx]
+    """
+    
+    def __init__(self, motor_control: MotorControl):
+        """
+        初始化舵机控制器
+        
+        Args:
+            motor_control: MotorControl对象，用于串口通信
+        """
+        self.mc = motor_control
+        self.servo_positions = [0, 0, 0]  # 3个舵机的当前位置缓存
+        self.servo_velocities = [0, 0, 0]  # 3个舵机的当前速度缓存
+        self.write_id = 0x06  # 写位置命令ID
+        self.read_ab_id = 0x07   # 读取舵机A,B命令ID
+        self.read_c_id = 0x08    # 读取舵机C命令ID
+        
+    def set_servo_position(self, servo_index: int, position: int) -> bool:
+        """
+        设置单个舵机位置
+        
+        Args:
+            servo_index: 舵机索引 (0-2)
+            position: 目标位置值
+            
+        Returns:
+            bool: 设置是否成功
+        """
+        if not (0 <= servo_index < 3):
+            print(f"舵机索引超出范围: {servo_index}, 应该在0-2之间")
+            return False
+            
+        # 更新缓存位置
+        self.servo_positions[servo_index] = position
+        
+        # 发送所有舵机位置
+        return self.set_all_servo_positions(self.servo_positions)
+    
+    def set_all_servo_positions(self, positions: List[int]) -> bool:
+        """
+        设置所有舵机位置
+        
+        Args:
+            positions: 3个舵机的位置列表 [a, b, c]
+            
+        Returns:
+            bool: 设置是否成功
+        """
+        if len(positions) < 3:
+            print(f"位置数据不足: 需要3个，提供了{len(positions)}个")
+            return False
+            
+        try:
+            # 构造8字节数据包：[a1, a2, b1, b2, c1, c2, xx, xx]
+            data = []
+            for i in range(3):
+                pos = int(positions[i])
+                # 将位置值分解为高低字节
+                high_byte = (pos >> 8) & 0xFF
+                low_byte = pos & 0xFF
+                data.extend([high_byte, low_byte])
+            
+            # 添加2字节填充
+            data.extend([0x00, 0x00])
+            
+            # 发送位置命令
+            print('舵机位置设置: ', data)
+            self.mc.send_data(self.write_id, data)
+            
+            # 更新缓存
+            self.servo_positions = positions[:3]
+            
+            print(f"舵机位置设置成功: {positions[:3]}")
+            return True
+            
+        except Exception as e:
+            print(f"设置舵机位置失败: {e}")
+            return False
+    
+    def get_servo_positions(self) -> Optional[List[int]]:
+        """
+        读取所有舵机当前位置
+        
+        Returns:
+            List[int]: 3个舵机的位置列表 [a, b, c]，失败返回None
+        """
+        try:
+            positions = []
+            
+            # 读取舵机A和B的位置 (0x07)
+            read_data = [0, 0, 0, 0, 0, 0, 0, 0]  # 8字节空数据
+            self.mc.send_data(self.read_ab_id, read_data)
+            sleep(0.1)  # 等待响应
+            
+            raw_data_ab = self.mc.recv_raw()
+            sleep(0.1)
+            print('ab recv raw data is ', raw_data_ab)
+            if raw_data_ab and len(raw_data_ab) > 0 and len(raw_data_ab[0]) >= 15:
+                data_ab = raw_data_ab[0][7:15]  # [pa1, pa2, va1, va2, pb1, pb2, vb1, vb2]
+                
+                # 解析舵机A位置
+                pos_a = data_ab[0] * 256 + data_ab[1]
+                positions.append(pos_a)
+                
+                # 解析舵机B位置
+                pos_b = data_ab[4] * 256 + data_ab[5]
+                positions.append(pos_b)
+                
+                # 更新速度缓存
+                vel_a = data_ab[2] * 256 + data_ab[3]
+                vel_b = data_ab[6] * 256 + data_ab[7]
+                self.servo_velocities[0] = vel_a
+                self.servo_velocities[1] = vel_b
+            else:
+                print("读取舵机A,B失败")
+                return None
+            
+            # 读取舵机C的位置 (0x08)
+            self.mc.send_data(self.read_c_id, read_data)
+            sleep(0.1)  # 等待响应
+            
+            raw_data_c = self.mc.recv_raw()
+            print('c recv raw data is ', raw_data_c)
+            if raw_data_c and len(raw_data_c) > 0 and len(raw_data_c[0]) >= 15:
+                data_c = raw_data_c[0][7:15]  # [pc1, pc2, vc1, vc2, xx, xx, xx, xx]
+                
+                # 解析舵机C位置
+                pos_c = data_c[0] * 256 + data_c[1]
+                positions.append(pos_c)
+                
+                # 更新速度缓存
+                vel_c = data_c[2] * 256 + data_c[3]
+                self.servo_velocities[2] = vel_c
+            else:
+                print("读取舵机C失败")
+                return None
+            
+            # 更新位置缓存
+            self.servo_positions = positions
+            
+            print(f"舵机位置读取成功: {positions}")
+            return positions
+                
+        except Exception as e:
+            print(f"读取舵机位置失败: {e}")
+            return None
+    
+    def get_servo_velocities(self) -> Optional[List[int]]:
+        """
+        获取所有舵机当前速度
+        
+        Returns:
+            List[int]: 3个舵机的速度列表 [va, vb, vc]，失败返回None
+        """
+        # 先读取位置（同时会更新速度缓存）
+        if self.get_servo_positions() is not None:
+            return self.servo_velocities.copy()
+        return None
+    
+    def get_servo_position(self, servo_index: int) -> Optional[int]:
+        """
+        获取单个舵机位置
+        
+        Args:
+            servo_index: 舵机索引 (0-2)
+            
+        Returns:
+            int: 舵机位置，失败返回None
+        """
+        if not (0 <= servo_index < 3):
+            print(f"舵机索引超出范围: {servo_index}")
+            return None
+            
+        positions = self.get_servo_positions()
+        if positions:
+            return positions[servo_index]
+        return None
+    
+    def get_servo_velocity(self, servo_index: int) -> Optional[int]:
+        """
+        获取单个舵机速度
+        
+        Args:
+            servo_index: 舵机索引 (0-2)
+            
+        Returns:
+            int: 舵机速度，失败返回None
+        """
+        if not (0 <= servo_index < 3):
+            print(f"舵机索引超出范围: {servo_index}")
+            return None
+            
+        velocities = self.get_servo_velocities()
+        if velocities:
+            return velocities[servo_index]
+        return None
+    
+    def move_servo_relative(self, servo_index: int, delta: int) -> bool:
+        """
+        相对移动舵机位置
+        
+        Args:
+            servo_index: 舵机索引 (0-2)
+            delta: 位置增量
+            
+        Returns:
+            bool: 移动是否成功
+        """
+        if not (0 <= servo_index < 3):
+            print(f"舵机索引超出范围: {servo_index}")
+            return False
+            
+        current_pos = self.get_servo_position(servo_index)
+        if current_pos is None:
+            print(f"无法获取舵机{servo_index}当前位置")
+            return False
+            
+        new_pos = current_pos + delta
+        return self.set_servo_position(servo_index, new_pos)
+    
+    def get_cached_positions(self) -> List[int]:
+        """
+        获取缓存的舵机位置（不进行实际读取）
+        
+        Returns:
+            List[int]: 缓存的3个舵机位置
+        """
+        return self.servo_positions.copy()
+    
+    def get_cached_velocities(self) -> List[int]:
+        """
+        获取缓存的舵机速度（不进行实际读取）
+        
+        Returns:
+            List[int]: 缓存的3个舵机速度
+        """
+        return self.servo_velocities.copy()
+    
+    def demo_servo_control(self, cycles: int = 5):
+        """
+        舵机控制演示
+        
+        Args:
+            cycles: 演示循环次数
+        """
+        print("开始舵机控制演示...")
+        
+        # 初始位置
+        initial_positions = [3131, 156, 0, 0]
+        delta = 200
+        
+        try:
+            for cycle in range(cycles):
+                print(f"\n=== 演示循环 {cycle + 1}/{cycles} ===")
+                
+                # 读取当前位置
+                current_positions = self.get_servo_positions()
+                if current_positions:
+                    print(f"当前位置: {current_positions}")
+                
+                # 设置新位置（增加delta）
+                new_positions = [pos + delta for pos in initial_positions]
+                success = self.set_all_servo_positions(new_positions)
+                if success:
+                    print(f"移动到: {new_positions}")
+                
+                sleep(2)
+                
+                # 恢复初始位置
+                success = self.set_all_servo_positions(initial_positions)
+                if success:
+                    print(f"恢复到: {initial_positions}")
+                
+                sleep(2)
+                
+        except KeyboardInterrupt:
+            print("\n用户中断演示")
+        except Exception as e:
+            print(f"演示过程中出错: {e}")
+        
+        print("舵机控制演示完成")
