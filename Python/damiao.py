@@ -138,6 +138,9 @@ class Motor:
         self.param_map: dict[int, ValueType] = {}
         self.last_time_ = time.monotonic()
         self.delta_time_= 0
+        self.state_q = 0
+        self.state_dq = 0 
+        self.state_tau = 0
 
     def updateTimeInterval(self) -> float:
         now = time.monotonic()
@@ -208,7 +211,8 @@ class Motor:
         self.mode = value
 
 class Motor_Control:
-    def __init__(self, nom_baud: int, dat_baud: int, sn: str , data_ptr: list, use_ht=False):
+    def __init__(self,usb_hw=None, nom_baud: int=0, dat_baud: int=5000000, sn: str ='null', data_ptr: list=[], use_ht=False):
+        assert usb_hw or (nom_baud != 0), 'the usb or nom should be one right '
         self.data_ptr_ = data_ptr
         self.motors: dict[int, Motor] = {}
         self.read_write_save = threading.Event()# 初始为未设置状态
@@ -218,8 +222,10 @@ class Motor_Control:
         for act_data in self.data_ptr_:
             motor = Motor(act_data.motorType, act_data.mode, act_data.can_id, act_data.mst_id)
             self.addMotor(motor)
-
-        self.usb_hw = usb_class(nom_baud, dat_baud,sn)
+        if usb_hw:
+            self.usb_hw = usb_hw
+        else: 
+            self.usb_hw = usb_class(nom_baud, dat_baud,sn)
         time.sleep(0.5)
         
         # 注意：回调函数将由MotorManager的CANFrameDispatcher统一管理
@@ -535,8 +541,7 @@ class Motor_Control:
 
         canID = value.head.id
         # HT电机的帧将由CANFrameDispatcher处理，这里只处理达妙电机的帧
-        if canID > 0x600:
-            return  # 跳过HT电机帧
+
         if self.read_write_save.is_set() and canID in self.motors:
             if value.data[2] in (0x33, 0x55, 0xAA):
                 if value.data[2] in (0x33, 0x55):
@@ -552,7 +557,7 @@ class Motor_Control:
             if canID not in self.motors:
                 return
 
-            m = self.motors[canID]
+            m = self.motors[canID-16]
             limit_param_receive = m.get_limit_param()
             receive_q = uint_to_float(q_uint, -limit_param_receive[0], limit_param_receive[0], 16)
             receive_dq = uint_to_float(dq_uint, -limit_param_receive[1], limit_param_receive[1], 12)
