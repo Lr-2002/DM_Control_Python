@@ -340,8 +340,48 @@ class MotorControl:
         data_buf = np.array([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, cmd], np.uint8)
         self.__send_data(Motor.SlaveID, data_buf)
     def send_data(self, motor_id, data):
-       
+        """发送数据到电机 (兼容DM和HT_CAN)"""
         self.__send_data(motor_id, data)
+    
+    def send_ht_can_data(self, motor_id, data):
+        """
+        发送HT_CAN协议数据 - 使用DM的USB-CAN转接器格式
+        
+        Args:
+            motor_id: 电机ID  
+            data: 8字节数据列表
+        """
+        try:
+            # 构造HT_CAN的CAN ID (0x8000 | motor_id)
+            can_id = 0x8000 | motor_id
+            
+            # 确保数据长度为8字节
+            if len(data) < 8:
+                data += [0x00] * (8 - len(data))
+            elif len(data) > 8:
+                data = data[:8]
+            
+            # 调试输出
+            print(f"发送HT_CAN: motor_id={motor_id}, can_id=0x{can_id:04X}")
+            print(f"数据: {[hex(x) for x in data]}")
+            
+            # 复制DM的帧模板
+            ht_frame = self.send_data_frame.copy()
+            
+            # 设置HT_CAN的CAN ID到DM格式的对应位置
+            ht_frame[13] = can_id & 0xFF        # CAN ID 低字节
+            ht_frame[14] = (can_id >> 8) & 0xFF # CAN ID 高字节
+            
+            # 设置数据到DM格式的数据位置 (Byte 21-28)
+            ht_frame[21:29] = data
+            
+            # 调试输出完整帧
+            print(f"完整帧: {[hex(x) for x in ht_frame]}")
+            
+            self.serial_.write(bytes(ht_frame))
+            
+        except Exception as e:
+            print(f"HT_CAN数据发送失败: {e}")
     def __send_data(self, motor_id, data):
         """
         send data to the motor 发送数据到电机
@@ -353,6 +393,7 @@ class MotorControl:
         self.send_data_frame[14] = (motor_id >> 8)& 0xff  #id high 8 bits
         self.send_data_frame[21:29] = data
         self.serial_.write(bytes(self.send_data_frame.T))
+        print('send data is ', ' '.join(f'{b:02X}' for b in self.send_data_frame))
 
     def __read_RID_param(self, Motor, RID):
         can_id_l = Motor.SlaveID & 0xff #id low 8 bits
@@ -790,140 +831,566 @@ class ServoController:
             return positions
                 
         except Exception as e:
-            print(f"读取舵机位置失败: {e}")
-            return None
-    
-    def get_servo_velocities(self) -> Optional[List[int]]:
-        """
-        获取所有舵机当前速度
+            print(f"舵机控制演示失败: {e}")
+
+
+class HT_Motor:
+    """高擎电机对象类"""
+    def __init__(self, motor_id: int, motor_type: str = "M4438_30"):
+        self.motor_id = motor_id
+        self.motor_type = motor_type
+        self.position = 0.0
+        self.velocity = 0.0
+        self.torque = 0.0
+        self.temperature = 0.0
+        self.is_enabled = False
         
-        Returns:
-            List[int]: 3个舵机的速度列表 [va, vb, vc]，失败返回None
-        """
-        # 先读取位置（同时会更新速度缓存）
-        if self.get_servo_positions() is not None:
-            return self.servo_velocities.copy()
-        return None
+    def update_state(self, position: float, velocity: float, torque: float, temperature: float = 0.0):
+        """更新电机状态"""
+        self.position = position
+        self.velocity = velocity
+        self.torque = torque
+        self.temperature = temperature
+
+
+class HT_CAN_Controller:
+    """
+    高擎电机HT_CAN协议控制器
+    专门用于4438_30等高擎电机的控制和监听
+    """
     
-    def get_servo_position(self, servo_index: int) -> Optional[int]:
+    def __init__(self, motor_control: MotorControl):
         """
-        获取单个舵机位置
-        
-        Args:
-            servo_index: 舵机索引 (0-2)
-            
-        Returns:
-            int: 舵机位置，失败返回None
-        """
-        if not (0 <= servo_index < 3):
-            print(f"舵机索引超出范围: {servo_index}")
-            return None
-            
-        positions = self.get_servo_positions()
-        if positions:
-            return positions[servo_index]
-        return None
-    
-    def get_servo_velocity(self, servo_index: int) -> Optional[int]:
-        """
-        获取单个舵机速度
+        初始化HT_CAN控制器
         
         Args:
-            servo_index: 舵机索引 (0-2)
-            
-        Returns:
-            int: 舵机速度，失败返回None
+            motor_control: MotorControl对象，用于串口通信
         """
-        if not (0 <= servo_index < 3):
-            print(f"舵机索引超出范围: {servo_index}")
-            return None
-            
-        velocities = self.get_servo_velocities()
-        if velocities:
-            return velocities[servo_index]
-        return None
+        self.mc = motor_control
+        self.motors = {}  # 存储电机对象
+        
+        # HT_CAN协议命令定义 (根据协议文档)
+        # 读取状态: cmd=0x17, addr=0x01 (读取位置、速度、力矩)
+        self.CMD_READ_STATE = 0x17
+        self.ADDR_READ_STATE = 0x01
+        
+        # 普通模式控制: cmd1=0x07, cmd2=0x07
+        self.CMD_NORMAL_MODE = [0x07, 0x07]
+        
+        # 力矩模式控制: cmd1=0x05, cmd2=0x13  
+        self.CMD_TORQUE_MODE = [0x05, 0x13]
+        
+        # 协同控制模式: cmd1=0x07, cmd2=0x35
+        self.CMD_COOP_MODE = [0x07, 0x35]
+        
+        # 电机停止: 0x01, 0x00, 0x00
+        self.CMD_STOP = [0x01, 0x00, 0x00]
+        
+        # 电机刹车: 0x01, 0x00, 0x0f
+        self.CMD_BRAKE = [0x01, 0x00, 0x0f]
+        
+        # 周期状态返回: 0x05, 0xb4
+        self.CMD_TIMED_RETURN = [0x05, 0xb4]
+        
+        # 无限制标志
+        self.NO_LIMIT = 0x8000
+        
+        # 4438_30电机参数
+        self.MOTOR_PARAMS = {
+            "M4438_30": {
+                "max_position": 12.5,    # 最大位置 (rad)
+                "max_velocity": 30.0,    # 最大速度 (rad/s)
+                "max_torque": 10.0,      # 最大力矩 (Nm)
+                "reduction_ratio": 30    # 减速比
+            }
+        }
     
-    def move_servo_relative(self, servo_index: int, delta: int) -> bool:
+    def add_motor(self, motor_id: int, motor_type: str = "M4438_30") -> bool:
         """
-        相对移动舵机位置
+        添加电机到控制器
         
         Args:
-            servo_index: 舵机索引 (0-2)
-            delta: 位置增量
+            motor_id: 电机ID (1-127)
+            motor_type: 电机型号
             
         Returns:
-            bool: 移动是否成功
+            bool: 添加是否成功
         """
-        if not (0 <= servo_index < 3):
-            print(f"舵机索引超出范围: {servo_index}")
+        if not (1 <= motor_id <= 127):
+            print(f"电机ID超出范围: {motor_id}, 应该在1-127之间")
             return False
             
-        current_pos = self.get_servo_position(servo_index)
-        if current_pos is None:
-            print(f"无法获取舵机{servo_index}当前位置")
+        if motor_type not in self.MOTOR_PARAMS:
+            print(f"不支持的电机型号: {motor_type}")
             return False
             
-        new_pos = current_pos + delta
-        return self.set_servo_position(servo_index, new_pos)
+        self.motors[motor_id] = HT_Motor(motor_id, motor_type)
+        print(f"添加电机成功: ID={motor_id}, 型号={motor_type}")
+        return True
     
-    def get_cached_positions(self) -> List[int]:
+    def enable_motor(self, motor_id: int) -> bool:
         """
-        获取缓存的舵机位置（不进行实际读取）
-        
-        Returns:
-            List[int]: 缓存的3个舵机位置
-        """
-        return self.servo_positions.copy()
-    
-    def get_cached_velocities(self) -> List[int]:
-        """
-        获取缓存的舵机速度（不进行实际读取）
-        
-        Returns:
-            List[int]: 缓存的3个舵机速度
-        """
-        return self.servo_velocities.copy()
-    
-    def demo_servo_control(self, cycles: int = 5):
-        """
-        舵机控制演示
+        使能电机 (HT_CAN协议中通过发送控制命令自动使能)
+        这里通过读取状态来激活电机
         
         Args:
-            cycles: 演示循环次数
+            motor_id: 电机ID
+            
+        Returns:
+            bool: 使能是否成功
         """
-        print("开始舵机控制演示...")
+        if motor_id not in self.motors:
+            print(f"电机ID {motor_id} 未找到")
+            return False
+            
+        try:
+            # HT_CAN协议中没有专门的使能命令
+            # 通过读取状态来激活电机通信
+            success = self.read_motor_state(motor_id)
+            
+            if success:
+                self.motors[motor_id].is_enabled = True
+                print(f"电机 {motor_id} 使能成功")
+                return True
+            else:
+                print(f"电机 {motor_id} 使能失败: 无法读取状态")
+                return False
+            
+        except Exception as e:
+            print(f"电机 {motor_id} 使能失败: {e}")
+            return False
+    
+    def disable_motor(self, motor_id: int) -> bool:
+        """
+        停止电机 (根据HT_CAN协议: 0x01, 0x00, 0x00)
         
-        # 初始位置
-        initial_positions = [3131, 156, 0, 0]
-        delta = 200
+        Args:
+            motor_id: 电机ID
+            
+        Returns:
+            bool: 停止是否成功
+        """
+        if motor_id not in self.motors:
+            print(f"电机ID {motor_id} 未找到")
+            return False
+            
+        try:
+            # 根据协议文档: 电机停止命令
+            data = self.CMD_STOP + [0x00] * 5  # 补齐8字节
+            
+            self.mc.send_ht_can_data(motor_id, data)
+            self.motors[motor_id].is_enabled = False
+            print(f"电机 {motor_id} 已停止")
+            return True
+            
+        except Exception as e:
+            print(f"电机 {motor_id} 停止失败: {e}")
+            return False
+    
+    def set_position(self, motor_id: int, position: float, torque: float = 1.0) -> bool:
+        """
+        位置控制 (普通模式: 0x07, 0x07)
+        位置单位: 圈, 力矩单位: Nm
+        
+        Args:
+            motor_id: 电机ID
+            position: 目标位置 (圈)
+            torque: 最大力矩 (Nm)
+            
+        Returns:
+            bool: 设置是否成功
+        """
+        if motor_id not in self.motors:
+            print(f"电机ID {motor_id} 未找到")
+            return False
+            
+        motor = self.motors[motor_id]
+        params = self.MOTOR_PARAMS[motor.motor_type]
         
         try:
-            for cycle in range(cycles):
-                print(f"\n=== 演示循环 {cycle + 1}/{cycles} ===")
-                
-                # 读取当前位置
-                current_positions = self.get_servo_positions()
-                if current_positions:
-                    print(f"当前位置: {current_positions}")
-                
-                # 设置新位置（增加delta）
-                new_positions = [pos + delta for pos in initial_positions]
-                success = self.set_all_servo_positions(new_positions)
-                if success:
-                    print(f"移动到: {new_positions}")
-                
-                sleep(2)
-                
-                # 恢复初始位置
-                success = self.set_all_servo_positions(initial_positions)
-                if success:
-                    print(f"恢复到: {initial_positions}")
-                
-                sleep(2)
-                
-        except KeyboardInterrupt:
-            print("\n用户中断演示")
+            # 转换为协议格式
+            # 位置: 单位0.0001圈, int16
+            pos_int16 = int(position * 10000)  # 转换为0.0001圈单位
+            pos_int16 = max(-32767, min(32767, pos_int16))  # int16范围限制
+            
+            # 力矩: 需要根据4438电机的转换公式 (暂用简化版本)
+            tqe_int16 = int(torque * 1000)  # 简化转换，实际需要查表
+            tqe_int16 = max(-32767, min(32767, tqe_int16))
+            
+            # 构造普通模式位置控制命令: 0x07, 0x07, pos1, pos2, val1, val2, tqe1, tqe2
+            # 位置控制时速度设为无限制(0x8000)
+            data = [
+                self.CMD_NORMAL_MODE[0],  # 0x07
+                self.CMD_NORMAL_MODE[1],  # 0x07
+                pos_int16 & 0xFF,         # pos1 (低字节)
+                (pos_int16 >> 8) & 0xFF,  # pos2 (高字节)
+                self.NO_LIMIT & 0xFF,     # val1 (速度无限制)
+                (self.NO_LIMIT >> 8) & 0xFF,  # val2
+                tqe_int16 & 0xFF,         # tqe1 (力矩低字节)
+                (tqe_int16 >> 8) & 0xFF   # tqe2 (力矩高字节)
+            ]
+            
+            self.mc.send_ht_can_data(motor_id, data)
+            print(f"电机 {motor_id} 位置设置: {position:.4f} 圈, 力矩限制: {torque:.3f} Nm")
+            return True
+            
         except Exception as e:
-            print(f"演示过程中出错: {e}")
+            print(f"电机 {motor_id} 位置设置失败: {e}")
+            return False
+    
+    def set_velocity(self, motor_id: int, velocity: float, torque: float = 1.0) -> bool:
+        """
+        速度控制 (普通模式: 0x07, 0x07)
+        速度单位: 转/秒, 力矩单位: Nm
         
-        print("舵机控制演示完成")
+        Args:
+            motor_id: 电机ID
+            velocity: 目标速度 (转/秒)
+            torque: 最大力矩 (Nm)
+            
+        Returns:
+            bool: 设置是否成功
+        """
+        if motor_id not in self.motors:
+            print(f"电机ID {motor_id} 未找到")
+            return False
+            
+        try:
+            # 转换为协议格式
+            # 速度: 单位0.00025转/秒, int16
+            vel_int16 = int(velocity / 0.00025)  # 转换为协议单位
+            vel_int16 = max(-32767, min(32767, vel_int16))
+            
+            # 力矩: 简化转换
+            tqe_int16 = int(torque * 1000)
+            tqe_int16 = max(-32767, min(32767, tqe_int16))
+            
+            # 构造普通模式速度控制命令: 0x07, 0x07, pos1, pos2, val1, val2, tqe1, tqe2
+            # 速度控制时位置设为无限制(0x8000)
+            data = [
+                self.CMD_NORMAL_MODE[0],  # 0x07
+                self.CMD_NORMAL_MODE[1],  # 0x07
+                self.NO_LIMIT & 0xFF,     # pos1 (位置无限制)
+                (self.NO_LIMIT >> 8) & 0xFF,  # pos2
+                vel_int16 & 0xFF,         # val1 (速度低字节)
+                (vel_int16 >> 8) & 0xFF,  # val2 (速度高字节)
+                tqe_int16 & 0xFF,         # tqe1 (力矩低字节)
+                (tqe_int16 >> 8) & 0xFF   # tqe2 (力矩高字节)
+            ]
+            
+            self.mc.send_ht_can_data(motor_id, data)
+            print(f"电机 {motor_id} 速度设置: {velocity:.3f} 转/秒, 力矩限制: {torque:.3f} Nm")
+            return True
+            
+        except Exception as e:
+            print(f"电机 {motor_id} 速度设置失败: {e}")
+            return False
+    
+    def read_motor_state(self, motor_id: int) -> bool:
+        """
+        读取电机状态
+        根据HT_CAN协议: cmd=0x17, addr=0x01
+        
+        Args:
+            motor_id: 电机ID
+            
+        Returns:
+            bool: 读取是否成功
+        """
+        if motor_id not in self.motors:
+            print(f"电机ID {motor_id} 未找到")
+            return False
+            
+        try:
+            # 根据HT_CAN协议构造读取状态命令
+            # cmd = 0x17, addr = 0x01
+            data = [
+                self.CMD_READ_STATE,   # 命令字: 0x17
+                self.ADDR_READ_STATE,  # 地址: 0x01
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00  # 填充
+            ]
+            
+            self.mc.send_ht_can_data(motor_id, data)
+            print(f"发送电机 {motor_id} 状态读取命令 (cmd=0x17, addr=0x01)")
+            
+            # 接收并解析回复
+            sleep(0.1)  # 等待回复
+            raw_data = self.mc.recv_raw()
+            
+            if raw_data and len(raw_data) > 0:
+                self._parse_motor_state(motor_id, raw_data[0])
+                return True
+            else:
+                print(f"电机 {motor_id} 无状态回复")
+                return False
+                
+        except Exception as e:
+            print(f"电机 {motor_id} 状态读取失败: {e}")
+            return False
+    
+    def scan_ht_motors(self, id_range=(1, 20)):
+        """
+        扫描HT电机ID
+        
+        Args:
+            id_range: ID扫描范围 (start, end)
+        """
+        print(f"🔍 扫描HT电机ID范围: {id_range[0]}-{id_range[1]}")
+        found_motors = []
+        
+        for motor_id in range(id_range[0], id_range[1] + 1):
+            print(f"测试ID: {motor_id}", end=" ")
+            
+            # 发送状态读取命令
+            data = [0x17, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+            self.mc.send_ht_can_data(motor_id, data)
+            
+            sleep(0.1)
+            raw_data = self.mc.recv_raw()
+            
+            if raw_data and len(raw_data) > 0:
+                print(f"✅ 发现HT电机!")
+                found_motors.append(motor_id)
+                # 解析响应数据
+                print(f"   响应数据: {[hex(x) for x in raw_data[0]] if raw_data[0] else 'None'}")
+            else:
+                print(f"❌")
+        
+        if found_motors:
+            print(f"\n🎯 找到 {len(found_motors)} 个HT电机: {found_motors}")
+        else:
+            print("\n⚠️  未找到任何HT电机响应")
+            
+        return found_motors
+    
+    def _parse_motor_state(self, motor_id: int, raw_data: bytes):
+        """
+        解析电机状态数据 (根据HT_CAN协议)
+        返回格式: cmd=0x27, addr=0x01, pos1, pos2, vel1, vel2, tqe1, tqe2
+        
+        Args:
+            motor_id: 电机ID
+            raw_data: 原始数据包
+        """
+        try:
+            if len(raw_data) >= 8:
+                data = raw_data[2:8]  # 跳过cmd和addr，提取数据部分
+                
+                if len(data) >= 6:
+                    # 解析int16格式数据 (小端模式)
+                    pos_raw = (data[1] << 8) | data[0]  # pos1, pos2
+                    vel_raw = (data[3] << 8) | data[2]  # vel1, vel2  
+                    tqe_raw = (data[5] << 8) | data[4]  # tqe1, tqe2
+                    
+                    # 转换为有符号int16
+                    if pos_raw > 32767: pos_raw -= 65536
+                    if vel_raw > 32767: vel_raw -= 65536
+                    if tqe_raw > 32767: tqe_raw -= 65536
+                    
+                    # 转换为实际单位
+                    position = pos_raw * 0.0001  # 转换为圈
+                    velocity = vel_raw * 0.00025  # 转换为转/秒
+                    torque = tqe_raw * 0.001  # 简化转换，实际需要查表
+                    
+                    # 更新电机状态
+                    self.motors[motor_id].update_state(position, velocity, torque)
+                    
+                    print(f"电机 {motor_id} 状态:")
+                    print(f"  位置: {position:.4f} rad")
+                    print(f"  速度: {velocity:.4f} rad/s")
+                    print(f"  力矩: {torque:.4f} Nm")
+                    
+        except Exception as e:
+            print(f"解析电机 {motor_id} 状态失败: {e}")
+    
+    def get_motor_position(self, motor_id: int) -> float:
+        """获取电机位置"""
+        if motor_id in self.motors:
+            return self.motors[motor_id].position
+        return 0.0
+    
+    def get_motor_velocity(self, motor_id: int) -> float:
+        """获取电机速度"""
+        if motor_id in self.motors:
+            return self.motors[motor_id].velocity
+        return 0.0
+    
+    def get_motor_torque(self, motor_id: int) -> float:
+        """获取电机力矩"""
+        if motor_id in self.motors:
+            return self.motors[motor_id].torque
+        return 0.0
+    
+    def monitor_motor(self, motor_id: int, duration: float = 10.0, interval: float = 0.5):
+        """
+        监听电机状态
+        
+        Args:
+            motor_id: 电机ID
+            duration: 监听时长 (秒)
+            interval: 读取间隔 (秒)
+        """
+        if motor_id not in self.motors:
+            print(f"电机ID {motor_id} 未找到")
+            return
+            
+        print(f"开始监听电机 {motor_id} 状态，时长 {duration} 秒...")
+        
+        start_time = time.time()
+        while time.time() - start_time < duration:
+            self.read_motor_state(motor_id)
+            sleep(interval)
+        
+        print(f"电机 {motor_id} 监听结束")
+    
+    def set_torque(self, motor_id: int, torque: float) -> bool:
+        """
+        纯力矩控制 (力矩模式: 0x05, 0x13)
+        
+        Args:
+            motor_id: 电机ID
+            torque: 目标力矩 (Nm)
+            
+        Returns:
+            bool: 设置是否成功
+        """
+        if motor_id not in self.motors:
+            print(f"电机ID {motor_id} 未找到")
+            return False
+            
+        try:
+            # 力矩转换 (简化版本，实际需要查表)
+            tqe_int16 = int(torque * 1000)
+            tqe_int16 = max(-32767, min(32767, tqe_int16))
+            
+            # 构造力矩模式命令: 0x05, 0x13, tqe1, tqe2
+            data = [
+                self.CMD_TORQUE_MODE[0],  # 0x05
+                self.CMD_TORQUE_MODE[1],  # 0x13
+                tqe_int16 & 0xFF,         # tqe1 (低字节)
+                (tqe_int16 >> 8) & 0xFF,  # tqe2 (高字节)
+                0x00, 0x00, 0x00, 0x00    # 填充到8字节
+            ]
+            
+            self.mc.send_ht_can_data(motor_id, data)
+            print(f"电机 {motor_id} 力矩设置: {torque:.3f} Nm")
+            return True
+            
+        except Exception as e:
+            print(f"电机 {motor_id} 力矩设置失败: {e}")
+            return False
+    
+    def brake_motor(self, motor_id: int) -> bool:
+        """
+        电机刹车 (0x01, 0x00, 0x0f)
+        
+        Args:
+            motor_id: 电机ID
+            
+        Returns:
+            bool: 刹车是否成功
+        """
+        if motor_id not in self.motors:
+            print(f"电机ID {motor_id} 未找到")
+            return False
+            
+        try:
+            data = self.CMD_BRAKE + [0x00] * 5  # 补齐8字节
+            
+            self.mc.send_ht_can_data(motor_id, data)
+            print(f"电机 {motor_id} 已刹车")
+            return True
+            
+        except Exception as e:
+            print(f"电机 {motor_id} 刹车失败: {e}")
+            return False
+    
+    def set_timed_return(self, motor_id: int, period_ms: int) -> bool:
+        """
+        设置周期状态返回 (0x05, 0xb4)
+        
+        Args:
+            motor_id: 电机ID
+            period_ms: 周期时间 (毫秒), 0表示停止
+            
+        Returns:
+            bool: 设置是否成功
+        """
+        if motor_id not in self.motors:
+            print(f"电机ID {motor_id} 未找到")
+            return False
+            
+        try:
+            # 构造周期返回命令
+            data = [
+                self.CMD_TIMED_RETURN[0],  # 0x05
+                self.CMD_TIMED_RETURN[1],  # 0xb4
+                0x02, 0x00, 0x00,          # 固定参数
+                period_ms & 0xFF,          # 周期低字节
+                (period_ms >> 8) & 0xFF,   # 周期高字节
+                0x00                       # 填充
+            ]
+            
+            self.mc.send_ht_can_data(motor_id, data)
+            if period_ms > 0:
+                print(f"电机 {motor_id} 设置周期返回: {period_ms}ms")
+            else:
+                print(f"电机 {motor_id} 停止周期返回")
+            return True
+            
+        except Exception as e:
+            print(f"电机 {motor_id} 周期返回设置失败: {e}")
+            return False
+    
+    def set_position_velocity_torque(self, motor_id: int, position: float, velocity: float, torque: float) -> bool:
+        """
+        协同控制模式 (0x07, 0x35)
+        同时控制位置、速度、力矩
+        
+        Args:
+            motor_id: 电机ID
+            position: 目标位置 (圈)
+            velocity: 目标速度 (转/秒)
+            torque: 最大力矩 (Nm)
+            
+        Returns:
+            bool: 设置是否成功
+        """
+        if motor_id not in self.motors:
+            print(f"电机ID {motor_id} 未找到")
+            return False
+            
+        try:
+            # 转换为协议格式
+            pos_int16 = int(position * 10000)  # 位置: 0.0001圈
+            vel_int16 = int(velocity / 0.00025)  # 速度: 0.00025转/秒
+            tqe_int16 = int(torque * 1000)  # 力矩简化转换
+            
+            # 限制范围
+            pos_int16 = max(-32767, min(32767, pos_int16))
+            vel_int16 = max(-32767, min(32767, vel_int16))
+            tqe_int16 = max(-32767, min(32767, tqe_int16))
+            
+            # 构造协同控制命令: 0x07, 0x35, val1, val2, tqe1, tqe2, pos1, pos2
+            data = [
+                self.CMD_COOP_MODE[0],    # 0x07
+                self.CMD_COOP_MODE[1],    # 0x35
+                vel_int16 & 0xFF,         # val1 (速度低字节)
+                (vel_int16 >> 8) & 0xFF,  # val2 (速度高字节)
+                tqe_int16 & 0xFF,         # tqe1 (力矩低字节)
+                (tqe_int16 >> 8) & 0xFF,  # tqe2 (力矩高字节)
+                pos_int16 & 0xFF,         # pos1 (位置低字节)
+                (pos_int16 >> 8) & 0xFF   # pos2 (位置高字节)
+            ]
+            
+            self.mc.send_ht_can_data(motor_id, data)
+            print(f"电机 {motor_id} 协同控制 - 位置: {position:.4f}圈, 速度: {velocity:.3f}转/秒, 力矩: {torque:.3f}Nm")
+            return True
+            
+        except Exception as e:
+            print(f"电机 {motor_id} 协同控制失败: {e}")
+            return False
+
+
+if __name__ == "__main__":
+    pass
