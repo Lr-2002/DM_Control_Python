@@ -139,20 +139,25 @@ def simple_test(manager):
 
         # 简单的位置控制测试
         print("\n执行简单位置控制测试...")
-        test_positions = [0.1, -0.1, 0.2, -0.2, 0.1, -0.1, 0.0, 0.0]  # 小幅度运动
+        test_positions = [0.2, -0.2, 0.2, -0.2, 0.2, -0.2, 0.2, -0.2]  # 小幅度运动
         target_velocities = [0.0] * 8
-        kps = [30.0] * 8  # 适中的刚度
-        kds = [1.0] * 8  # 适中的阻尼
+        # kps = [30.0] * 8  # 适中的刚度
+        kps = [60, 50, 50, 45, 40, 35, 20, 20]
+        # kds = [1.0] * 8  # 适中的阻尼
+        kds = [1, 1, 1, 1, 1, 1, 1, 1]
+        # kps = [0] * 8 
+        # kds = [0] * 8 
         target_torques = [0.0] * 8
-
-        success = manager.control_mit_batch(
-            list(range(1, 9)),
-            test_positions,
-            target_velocities,
-            kps,
-            kds,
-            target_torques,
-        )
+        for i in range(30):
+            success = manager.control_mit_batch(
+                list(range(1, 9)),
+                test_positions,
+                target_velocities,
+                kps,
+                kds,
+                target_torques,
+            )
+            time.sleep(0.002)
 
         if success:
             print("✓ 控制命令发送成功")
@@ -399,34 +404,34 @@ def main():
 
     try:
 
-        read_only_mode(manager)
-        # while True:
-        #     print("\n请选择测试模式:")
-        #     print("1. 简单测试")
-        #     print("2. 连续控制循环 (10秒)")
-        #     print("3. 连续控制循环 (自定义时间)")
-        #     print("4. 只读模式 - 读取所有关节角度")
-        #     print("5. 退出")
+        # read_only_mode(manager)
+        while True:
+            print("\n请选择测试模式:")
+            print("1. 简单测试")
+            print("2. 连续控制循环 (10秒)")
+            print("3. 连续控制循环 (自定义时间)")
+            print("4. 只读模式 - 读取所有关节角度")
+            print("5. 退出")
 
-        #     read_only_mode(manager)
-            # choice = input("请输入选择 (1-5): ").strip()
+            # read_only_mode(manager)
+            choice = input("请输入选择 (1-5): ").strip()
 
-            # if choice == "1":
-            #     simple_test(manager)
-            # elif choice == "2":
-            #     continuous_control_loop(manager, 10.0)
-            # elif choice == "3":
-            #     try:
-            #         duration = float(input("请输入持续时间(秒): "))
-            #         continuous_control_loop(manager, duration)
-            #     except ValueError:
-            #         print("无效的时间输入")
-            # # elif choice == "4":
-            #     read_only_mode(manager)
-            # elif choice == "5":
-            #     break
-            # else:
-            #     print("无效选择，请重新输入")
+            if choice == "1":
+                simple_test(manager)
+            elif choice == "2":
+                continuous_control_loop(manager, 10.0)
+            elif choice == "3":
+                try:
+                    duration = float(input("请输入持续时间(秒): "))
+                    continuous_control_loop(manager, duration)
+                except ValueError:
+                    print("无效的时间输入")
+            elif choice == "4":
+                read_only_mode(manager)
+            elif choice == "5":
+                break
+            else:
+                print("无效选择，请重新输入")
 
     except KeyboardInterrupt:
         print("\n程序被用户中断")
