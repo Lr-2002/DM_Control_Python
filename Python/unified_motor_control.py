@@ -187,7 +187,7 @@ class DamiaoProtocol(MotorProtocol):
     def read_feedback(self, motor_id: int) -> MotorFeedback:
         """读取达妙电机反馈"""
         if motor_id not in self.motors:
-            return MotorFeedback()
+            return MotorFeedback()  # 电机不存在时返回空反馈
         
         try:
             motor = self.motors[motor_id]
@@ -198,11 +198,18 @@ class DamiaoProtocol(MotorProtocol):
                 position=motor.Get_Position(),
                 velocity=motor.Get_Velocity(),
                 torque=motor.Get_tau(),
+                error_code=0,  # 达妙电机暂时没有错误码，默认为0
                 timestamp=time.time()
             )
         except Exception as e:
             print(f"Failed to read feedback from Damiao motor {motor_id}: {e}")
-            return MotorFeedback()
+            return MotorFeedback(  # 异常时返回错误状态的反馈
+                position=0.0,
+                velocity=0.0,
+                torque=0.0,
+                error_code=-1,  # 错误码-1表示读取失败
+                timestamp=time.time()
+            )
     
     def set_zero_position(self, motor_id: int) -> bool:
         """设置达妙电机零位"""
