@@ -46,6 +46,8 @@ class DmActData:
     mode: Control_Mode        # 电机处于哪种控制模式
     can_id: int
     mst_id: int
+    kp: int = 0
+    kd: int = 0
 
 class DM_REG(IntEnum):
     UV_Value = 0
@@ -220,11 +222,8 @@ class Motor_Control:
         self.usb_hw = usb_class(nom_baud, dat_baud,sn)
         time.sleep(0.5)
         
-        if use_ht:
-            self.ht_manager = HTMotorManager(self.usb_hw, as_sub_module=True)
-            
-
-        self.usb_hw.setFrameCallback(lambda val: self.canframeCallback(val, self.ht_manager))
+        # 注意：回调函数将由MotorManager的CANFrameDispatcher统一管理
+        # self.usb_hw.setFrameCallback(lambda val: self.canframeCallback(val, None))
         time.sleep(0.2)
 
         self.enable_all()  # 使能该接口下的所有电机
@@ -535,8 +534,9 @@ class Motor_Control:
         uint_to_float = lambda x, xmin, xmax, bits: ((float(x) / ((1 << bits) - 1)) * (xmax - xmin)) + xmin
 
         canID = value.head.id
-        if canID > 0x600 and ht_manager:
-            return ht_manager.can_frame_callback(value)
+        # HT电机的帧将由CANFrameDispatcher处理，这里只处理达妙电机的帧
+        if canID > 0x600:
+            return  # 跳过HT电机帧
         if self.read_write_save.is_set() and canID in self.motors:
             if value.data[2] in (0x33, 0x55, 0xAA):
                 if value.data[2] in (0x33, 0x55):
