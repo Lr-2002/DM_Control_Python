@@ -414,8 +414,8 @@ class HTMotorManager:
         self.last_data = [0]*20 
         self.read_extra = [0x00, 0x00, 0xff, 0xff]
         # Set up callback for CAN frames
-        if not as_sub_module:
-            self.usb_hw.setFrameCallback(self.can_frame_callback)
+        # if not as_sub_module:
+        #     self.usb_hw.setFrameCallback(self.can_frame_callback)
 
     def add_motor(self, motor_id: int, source_id: int = 0) -> HTMotor:
         """

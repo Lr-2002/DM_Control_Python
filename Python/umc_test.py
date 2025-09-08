@@ -360,8 +360,8 @@ def read_only_mode(manager):
                 print(f"扭矩范围: {min(torques):.4f} ~ {max(torques):.4f} Nm")
 
                 # 计算总能耗（简化估算）
-                total_power = sum(abs(t * v) for t, v in zip(torques, velocities))
-                print(f"估算总功率: {total_power:.2f} W")
+                # total_power = sum(abs(t * v) for t, v in zip(torques, velocities))
+                # print(f"估算总功率: {total_power:.2f} W")
             #
             # print("\n按 Enter 刷新，按 Ctrl+C 退出")
             #
