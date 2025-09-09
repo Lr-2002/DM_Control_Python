@@ -1,4 +1,9 @@
-from src import usb_class,can_value_type
+try:
+    # When imported from within Python directory
+    from src import usb_class, can_value_type
+except ImportError:
+    # When imported from upper directory
+    from Python.src import usb_class, can_value_type
 from enum import IntEnum
 import time
 import struct
@@ -8,7 +13,6 @@ import threading
 import signal
 from dataclasses import dataclass
 from typing import List
-from ht_motor import HTMotor, HTMotorManager
 class DM_Motor_Type(IntEnum):
     DM3507 = 0
     DM4310 = 1

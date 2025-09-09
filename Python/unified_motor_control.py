@@ -12,8 +12,14 @@ import numpy as np
 from dataclasses import dataclass
 
 # 导入必要的模块
-from damiao import Control_Mode_Code
-from src import can_value_type
+try:
+    # 当从Python目录内部导入时
+    from damiao import Control_Mode_Code
+    from src import can_value_type
+except ImportError:
+    # 当从上层目录导入时
+    from Python.damiao import Control_Mode_Code
+    from Python.src import can_value_type
 
 
 class MotorType(IntEnum):
