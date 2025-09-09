@@ -15,6 +15,7 @@ from Python.damiao import Motor_Control, DmActData, DM_Motor_Type, Control_Mode,
 from Python.ht_motor import HTMotorManager
 from Python.src import usb_class
 from minimum_gc import MinimumGravityCompensation as GC
+from usb_hw_wrapper import USBHardwareWrapper
 
 # ===== 全局配置 =====
 NUM_MOTORS = 6  # 基础电机数量（达妙电机）
@@ -78,7 +79,7 @@ class ICARM:
             
             # 创建USB硬件接口
             usb_hw = usb_class(1000000, 5000000, device_sn)
-            
+            usb_hw = USBHardwareWrapper(usb_hw)
             # 创建电机管理器
             self.motor_manager = MotorManager(usb_hw)
             
