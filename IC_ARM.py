@@ -17,7 +17,8 @@ from Python.src import usb_class
 from minimum_gc import MinimumGravityCompensation as GC
 
 # ===== 全局配置 =====
-NUM_MOTORS = 6  # 电机数量
+NUM_MOTORS = 6  # 基础电机数量（达妙电机）
+NUM_MOTORS_WITH_HT = 8  # 包含HT电机的总数量（6个达妙 + 2个HT）
 
 # 电机配置现在由unified_motor_control系统管理，不再需要这些配置
 
@@ -109,33 +110,77 @@ class ICARM:
                 self.motor_manager.add_ht_protocol(ht_manager)
             
             # 添加具体电机到管理器
-            for i in range(6):
-                motor_info = MotorInfo(
-                    motor_id=i+1,
-                    motor_type=MotorType.DAMIAO,
-                    can_id=damiao_data[i].can_id,
-                    name=f"m{i+1}",
-                    kp=damiao_data[i].kp,
-                    kd=damiao_data[i].kd,
-                    limits=dm_limit[damiao_data[i].motorType.value]
-                )
-                success = self.motor_manager.add_motor(i+1, 'damiao', motor_info, can_id=damiao_data[i].can_id)
-                if success:
-                    debug_print(f"  ✓ 电机 m{i+1} 添加成功")
-                else:
-                    debug_print(f"  ✗ 电机 m{i+1} 添加失败", 'ERROR')
+            if use_ht:
+                # 混合配置：前6个达妙电机 + 后2个HT电机
+                debug_print("配置混合电机系统（达妙+HT）...")
+                
+                # 添加6个达妙电机 (1-6)
+                for i in range(6):
+                    motor_info = MotorInfo(
+                        motor_id=i+1,
+                        motor_type=MotorType.DAMIAO,
+                        can_id=damiao_data[i].can_id,
+                        name=f"m{i+1}",
+                        kp=damiao_data[i].kp,
+                        kd=damiao_data[i].kd,
+                        limits=dm_limit[damiao_data[i].motorType.value]
+                    )
+                    success = self.motor_manager.add_motor(i+1, 'damiao', motor_info, can_id=damiao_data[i].can_id)
+                    if success:
+                        debug_print(f"  ✓ 达妙电机 m{i+1} 添加成功")
+                    else:
+                        debug_print(f"  ✗ 达妙电机 m{i+1} 添加失败", 'ERROR')
+                
+                # 添加2个HT电机 (7-8)
+                for i in range(2):
+                    motor_info = MotorInfo(
+                        motor_id=i + 7,
+                        motor_type=MotorType.HIGH_TORQUE,
+                        can_id=0x8094,  # HT电机使用固定的发送ID
+                        name=f"ht_{i+7}",
+                        kp=0,
+                        kd=0,
+                        limits=[12.5, 50.0, 20.0],  # HT电机扭矩限制更高
+                    )
+                    success = self.motor_manager.add_motor(i + 7, "ht", motor_info, ht_motor_id=i + 7)
+                    if success:
+                        debug_print(f"  ✓ HT电机 ht_{i+7} 添加成功")
+                    else:
+                        debug_print(f"  ✗ HT电机 ht_{i+7} 添加失败", 'ERROR')
+            else:
+                # 纯达妙电机配置
+                debug_print("配置纯达妙电机系统...")
+                for i in range(6):
+                    motor_info = MotorInfo(
+                        motor_id=i+1,
+                        motor_type=MotorType.DAMIAO,
+                        can_id=damiao_data[i].can_id,
+                        name=f"m{i+1}",
+                        kp=damiao_data[i].kp,
+                        kd=damiao_data[i].kd,
+                        limits=dm_limit[damiao_data[i].motorType.value]
+                    )
+                    success = self.motor_manager.add_motor(i+1, 'damiao', motor_info, can_id=damiao_data[i].can_id)
+                    if success:
+                        debug_print(f"  ✓ 达妙电机 m{i+1} 添加成功")
+                    else:
+                        debug_print(f"  ✗ 达妙电机 m{i+1} 添加失败", 'ERROR')
             
             # State variables (all in radians and SI units) - 内部维护的状态变量
             debug_print("初始化状态变量...")
-            self.q = np.zeros(NUM_MOTORS, dtype=np.float64)        # Joint positions (rad)
-            self.dq = np.zeros(NUM_MOTORS, dtype=np.float64)       # Joint velocities (rad/s)
-            self.ddq = np.zeros(NUM_MOTORS, dtype=np.float64)      # Joint accelerations (rad/s²)
-            self.tau = np.zeros(NUM_MOTORS, dtype=np.float64)      # Joint torques (N·m)
-            self.currents = np.zeros(NUM_MOTORS, dtype=np.float64) # Joint currents (A)
+            # 根据是否使用HT电机决定状态变量大小
+            motor_count = NUM_MOTORS_WITH_HT if use_ht else NUM_MOTORS
+            self.motor_count = motor_count  # 保存实际电机数量
+            
+            self.q = np.zeros(motor_count, dtype=np.float64)        # Joint positions (rad)
+            self.dq = np.zeros(motor_count, dtype=np.float64)       # Joint velocities (rad/s)
+            self.ddq = np.zeros(motor_count, dtype=np.float64)      # Joint accelerations (rad/s²)
+            self.tau = np.zeros(motor_count, dtype=np.float64)      # Joint torques (N·m)
+            self.currents = np.zeros(motor_count, dtype=np.float64) # Joint currents (A)
             
             # History for numerical differentiation
-            self.q_prev = np.zeros(NUM_MOTORS, dtype=np.float64)
-            self.dq_prev = np.zeros(NUM_MOTORS, dtype=np.float64)
+            self.q_prev = np.zeros(motor_count, dtype=np.float64)
+            self.dq_prev = np.zeros(motor_count, dtype=np.float64)
             self.last_update_time = time.time()
             
             # 验证状态变量
@@ -160,7 +205,7 @@ class ICARM:
     
     def _validate_internal_state(self):
         """验证内部状态变量的完整性"""
-        expected_shape = (NUM_MOTORS,)
+        expected_shape = (self.motor_count,)
         
         state_vars = {
             'q': self.q,
@@ -255,38 +300,38 @@ class ICARM:
     
     def _read_all_positions_raw(self):
         """Read positions from all motors using unified interface"""
-        positions = np.zeros(NUM_MOTORS)
+        positions = np.zeros(self.motor_count)
         
-        for i in range(NUM_MOTORS):
+        for i in range(self.motor_count):
             positions[i] = self._read_motor_position_raw(i+1)  # motor_id starts from 1
         
         return positions
     
     def _read_all_velocities_raw(self):
         """Read velocities from all motors using unified interface"""
-        velocities = np.zeros(NUM_MOTORS)
+        velocities = np.zeros(self.motor_count)
         
-        for i in range(NUM_MOTORS):
+        for i in range(self.motor_count):
             velocities[i] = self._read_motor_velocity_raw(i+1)  # motor_id starts from 1
         
         return velocities
     
     def _read_all_torques_raw(self):
         """Read torques from all motors using unified interface"""
-        torques = np.zeros(NUM_MOTORS)
+        torques = np.zeros(self.motor_count)
         
-        for i in range(NUM_MOTORS):
+        for i in range(self.motor_count):
             torques[i] = self._read_motor_torque_raw(i+1)  # motor_id starts from 1
         
         return torques
     
     def _read_all_currents_raw(self):
         """Estimate currents from torques (DM_CAN doesn't provide direct current reading)"""
-        currents = np.zeros(NUM_MOTORS)
+        currents = np.zeros(self.motor_count)
         torques = self._read_all_torques_raw()
         
         # 估算电流（使用力矩常数，需要校准）
-        for i in range(NUM_MOTORS):
+        for i in range(self.motor_count):
             currents[i] = torques[i] / 0.1  # 假设力矩常数为0.1 N·m/A
         
         return currents
@@ -302,7 +347,7 @@ class ICARM:
         self.motor_manager.update_all_states()
         
         # 读取所有电机状态
-        for i in range(NUM_MOTORS):
+        for i in range(self.motor_count):
             motor = self.motor_manager.get_motor(i+1)
             if motor:
                 state = motor.get_state()
@@ -331,7 +376,7 @@ class ICARM:
         self.motor_manager.update_all_states()
         
         # 快速读取所有电机状态
-        for i in range(NUM_MOTORS):
+        for i in range(self.motor_count):
             motor = self.motor_manager.get_motor(i+1)
             if motor:
                 state = motor.get_state()
@@ -360,7 +405,7 @@ class ICARM:
         self.motor_manager.update_all_states()
         
         # 超快速读取所有电机状态
-        for i in range(NUM_MOTORS):
+        for i in range(self.motor_count):
             motor = self.motor_manager.get_motor(i+1)
             if motor:
                 state = motor.get_state()
@@ -444,7 +489,7 @@ class ICARM:
                         if not validate_type(value, (int, float), f'state.{key}'):
                             raise ValueError(f"Invalid timestamp type: {type(value)}")
                     else:
-                        if not validate_array(value, (NUM_MOTORS,), f'state.{key}'):
+                        if not validate_array(value, (self.motor_count,), f'state.{key}'):
                             raise ValueError(f"Invalid state array {key}")
                         debug_print(f"    {key}: {value[:2]}... (shape: {value.shape}, dtype: {value.dtype})")
             
@@ -460,11 +505,11 @@ class ICARM:
             # 返回安全的默认状态
             debug_print("返回安全的默认状态", 'WARNING')
             return {
-                'positions': np.zeros(NUM_MOTORS, dtype=np.float64),
-                'velocities': np.zeros(NUM_MOTORS, dtype=np.float64),
-                'accelerations': np.zeros(NUM_MOTORS, dtype=np.float64),
-                'torques': np.zeros(NUM_MOTORS, dtype=np.float64),
-                'currents': np.zeros(NUM_MOTORS, dtype=np.float64),
+                'positions': np.zeros(self.motor_count, dtype=np.float64),
+                'velocities': np.zeros(self.motor_count, dtype=np.float64),
+                'accelerations': np.zeros(self.motor_count, dtype=np.float64),
+                'torques': np.zeros(self.motor_count, dtype=np.float64),
+                'currents': np.zeros(self.motor_count, dtype=np.float64),
                 'timestamp': time.time()
             }
     
@@ -527,7 +572,7 @@ class ICARM:
 
     def set_joint_position(self, joint_index, position_rad, velocity_rad_s=0.0, torque_nm=0.0):
         """Set position of a single joint using unified interface"""
-        if joint_index < NUM_MOTORS:
+        if joint_index < self.motor_count:
             motor_id = joint_index + 1  # motor_id starts from 1
             if self.debug:
                 debug_print(f"Setting joint {joint_index} position to {position_rad} rad, velocity to {velocity_rad_s} rad/s, torque to {torque_nm} Nm")
@@ -542,10 +587,10 @@ class ICARM:
     def set_joint_torque(self, torques_nm):
         """Set torques of all joints using unified interface"""
         if torques_nm is None:
-            torques_nm = np.zeros(NUM_MOTORS)
+            torques_nm = np.zeros(self.motor_count)
         
         success = True
-        for i in range(min(NUM_MOTORS, len(torques_nm))):
+        for i in range(min(self.motor_count, len(torques_nm))):
             if self.debug:
                 debug_print(f"Setting joint {i} torque to {torques_nm[i]} Nm")
             result = self._send_motor_command_raw(
@@ -567,13 +612,13 @@ class ICARM:
     def set_joint_positions(self, positions_rad, velocities_rad_s=None, torques_nm=None):
         """Set positions of all joints"""
         if velocities_rad_s is None:
-            velocities_rad_s = np.zeros(NUM_MOTORS)
+            velocities_rad_s = np.zeros(self.motor_count)
         if torques_nm is None:
-            torques_nm = np.zeros(NUM_MOTORS)
+            torques_nm = np.zeros(self.motor_count)
         
         success = True
         # breakpoint()
-        for i in range(min(NUM_MOTORS, len(positions_rad))):
+        for i in range(min(self.motor_count, len(positions_rad))):
             result = self.set_joint_position(
                 i, 
                 positions_rad[i], 
@@ -806,7 +851,7 @@ class ICARM:
             colors = ['red', 'blue', 'green', 'orange', 'purple', 'pink']
             
             # 绘制每个关节的位置轨迹
-            for i in range(NUM_MOTORS):
+            for i in range(min(NUM_MOTORS, self.motor_count)):  # 使用原有的NUM_MOTORS保持可视化兼容性
                 row = i // 3
                 col = i % 3
                 ax = axes[row, col]
@@ -1013,7 +1058,7 @@ class ICARM:
             self._refresh_all_states_ultra_fast()
             return self.gc.get_gravity_compensation_torque(self.q)
         else:
-            return np.zeros(NUM_MOTORS)
+            return np.zeros(self.motor_count)
 
     def start_gravity_compensation_mode(self, duration=None, update_rate=100):
         """
@@ -1184,8 +1229,8 @@ class ICARM:
             loop_count = 0
             start_time = time.time()
             last_log_time = start_time
-            max_position_change = np.zeros(NUM_MOTORS)
-            total_position_change = np.zeros(NUM_MOTORS)
+            max_position_change = np.zeros(self.motor_count)
+            total_position_change = np.zeros(self.motor_count)
             
             # 主控制循环
             debug_print("开始重力补偿控制循环...")
@@ -1322,7 +1367,7 @@ class ICARM:
             csv_file = open(csv_filename, 'w', newline='')
             csv_writer = csv.writer(csv_file)
             # 写入表头
-            headers = ['timestamp', 'time_s'] + [f'm{i+1}_pos_deg' for i in range(NUM_MOTORS)] + [f'm{i+1}_vel_deg_s' for i in range(NUM_MOTORS)]
+            headers = ['timestamp', 'time_s'] + [f'm{i+1}_pos_deg' for i in range(self.motor_count)] + [f'm{i+1}_vel_deg_s' for i in range(self.motor_count)]
             csv_writer.writerow(headers)
             print(f"CSV文件: {csv_filename}")
         
@@ -1434,7 +1479,7 @@ class ICARM:
         print(f"{'Joint':<8} {'Pos(deg)':<12} {'Vel(deg/s)':<12} {'Acc(deg/s²)':<15} {'Torque(Nm)':<12}")
         print("-"*80)
         
-        for i in range(NUM_MOTORS):
+        for i in range(self.motor_count):
             print(f"m{i+1:<7} {np.degrees(state['positions'][i]):<12.2f} "
                   f"{np.degrees(state['velocities'][i]):<12.2f} "
                   f"{np.degrees(state['accelerations'][i]):<15.2f} "
