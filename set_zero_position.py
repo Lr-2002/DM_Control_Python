@@ -7,6 +7,7 @@
 from IC_ARM import ICARM
 import time
 import sys
+MOTOR_LIST = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6']
 
 def display_current_positions(arm, duration=None):
     """
@@ -16,7 +17,9 @@ def display_current_positions(arm, duration=None):
         arm: ICARM实例
         duration: 显示时长(秒)，None为无限制
     """
-    print("\n实时关节位置显示 (按Ctrl+C停止并进入菜单):")
+    import keyboard
+    
+    print("\n实时关节位置显示 (按'q'键停止并进入菜单):")
     print("移动机械臂到期望的零点位置...")
     print("格式: 关节名: 角度° | 关节名: 角度° ...")
     print("-" * 60)
@@ -25,6 +28,11 @@ def display_current_positions(arm, duration=None):
     
     try:
         while True:
+            # 检查是否按下'q'键退出
+            if keyboard.is_pressed('q'):
+                print("\n检测到'q'键，退出显示...")
+                break
+                
             # 检查时长限制
             if duration and (time.time() - start_time) > duration:
                 break
@@ -33,10 +41,9 @@ def display_current_positions(arm, duration=None):
             try:
                 current_positions = arm.get_positions_degrees()
                 if current_positions is not None and len(current_positions) > 0:
-                    motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
                     position_str = " | ".join([
                         f"{name}: {current_positions[i]:.2f}°" 
-                        for i, name in enumerate(motor_names) if i < len(current_positions)
+                        for i, name in enumerate(MOTOR_LIST) if i < len(current_positions)
                     ])
                     print(f"\r{position_str}", end="", flush=True)
                 else:
@@ -46,9 +53,6 @@ def display_current_positions(arm, duration=None):
                 
             time.sleep(0.05)  # 20Hz刷新率
             
-    except KeyboardInterrupt:
-        print("\n")
-        return True
     except Exception as e:
         print(f"\n获取位置时出错: {e}")
         return False
@@ -116,7 +120,7 @@ def main():
                     current_positions = arm.get_positions_degrees()
                     if current_positions is not None and len(current_positions) > 0:
                         print("当前关节位置:")
-                        motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
+                        motor_names =MOTOR_LIST 
                         for i, name in enumerate(motor_names):
                             if i < len(current_positions):
                                 print(f"  {name}: {current_positions[i]:.2f}°")
@@ -138,14 +142,14 @@ def main():
                     
             elif choice == '2':
                 # 设置单个关节零点
-                print("\n可用关节: m1, m2, m3, m4, m5")
+                print(f"\n可用关节: {MOTOR_LIST}")
                 motor_name = input("请输入要设置零点的关节名称: ").strip()
                 
-                if motor_name in ['m1', 'm2', 'm3', 'm4', 'm5']:
+                if motor_name in MOTOR_LIST :
                     # 显示该关节当前位置
                     try:
                         current_positions = arm.get_positions_degrees()
-                        motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
+                        motor_names = MOTOR_LIST
                         motor_index = motor_names.index(motor_name)
                         if current_positions is not None and motor_index < len(current_positions):
                             print(f"{motor_name} 当前位置: {current_positions[motor_index]:.2f}°")
@@ -175,7 +179,7 @@ def main():
                 try:
                     current_positions = arm.get_positions_degrees()
                     if current_positions is not None and len(current_positions) > 0:
-                        motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
+                        motor_names =MOTOR_LIST 
                         for i, name in enumerate(motor_names):
                             if i < len(current_positions):
                                 print(f"  {name}: {current_positions[i]:.2f}°")
