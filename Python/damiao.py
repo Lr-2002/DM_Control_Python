@@ -536,7 +536,7 @@ class Motor_Control:
                 self.head = can_head_type()
                 self.data = [0] * 64
     """
-    def canframeCallback(self, value:can_value_type, ht_manager=None):
+    def canframeCallback(self, value:can_value_type):
         uint_to_float = lambda x, xmin, xmax, bits: ((float(x) / ((1 << bits) - 1)) * (xmax - xmin)) + xmin
 
         canID = value.head.id

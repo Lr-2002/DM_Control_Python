@@ -192,6 +192,7 @@ class DamiaoProtocol(MotorProtocol):
         try:
             motor = self.motors[motor_id]
             # 刷新电机状态
+
             self.motor_control.refresh_motor_status(motor)
             
             return MotorFeedback(
