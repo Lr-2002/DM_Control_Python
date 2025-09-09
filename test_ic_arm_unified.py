@@ -12,7 +12,7 @@ def test_basic_initialization():
     print("=== 测试1: 基本初始化 ===")
     try:
         # 初始化IC_ARM（使用统一电机控制系统）
-        arm = ICARM(debug=True, gc=False, use_ht=False)
+        arm = ICARM(debug=True, gc=False, use_ht=True)
         print("✓ IC_ARM初始化成功")
         
         # 测试电机信息读取
