@@ -17,21 +17,31 @@ def display_current_positions(arm, duration=None):
         arm: ICARM实例
         duration: 显示时长(秒)，None为无限制
     """
-    import keyboard
+    import sys
+    import select
+    import termios
+    import tty
     
     print("\n实时关节位置显示 (按'q'键停止并进入菜单):")
     print("移动机械臂到期望的零点位置...")
     print("格式: 关节名: 角度° | 关节名: 角度° ...")
     print("-" * 60)
     
-    start_time = time.time()
-    
+    # 保存终端设置
+    old_settings = termios.tcgetattr(sys.stdin)
     try:
+        # 设置终端为原始模式，不需要回车就能读取输入
+        tty.setraw(sys.stdin.fileno())
+        
+        start_time = time.time()
+        
         while True:
-            # 检查是否按下'q'键退出
-            if keyboard.is_pressed('q'):
-                print("\n检测到'q'键，退出显示...")
-                break
+            # 非阻塞检查键盘输入
+            if select.select([sys.stdin], [], [], 0)[0]:
+                key = sys.stdin.read(1)
+                if key == 'q':
+                    print("\n检测到'q'键，退出显示...")
+                    break
                 
             # 检查时长限制
             if duration and (time.time() - start_time) > duration:
@@ -56,6 +66,9 @@ def display_current_positions(arm, duration=None):
     except Exception as e:
         print(f"\n获取位置时出错: {e}")
         return False
+    finally:
+        # 恢复终端设置
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
     
     return True
 
