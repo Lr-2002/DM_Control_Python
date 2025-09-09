@@ -83,13 +83,21 @@ class ICARM:
 			self.motor_manager = MotorManager(usb_hw)
 			
 			# 配置达妙电机数据
+			# damiao_data = [
+			# 	DmActData(DM_Motor_Type.DM10010L, Control_Mode.MIT_MODE, 0x01, 0x11, 100, 3),
+			# 	DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x02, 0x12, 55, 1.5),
+			# 	DmActData(DM_Motor_Type.DM6248, Control_Mode.MIT_MODE, 0x03, 0x13, 65, 1.8),
+			# 	DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x04, 0x14, 70, 1.9),
+			# 	DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x05, 0x15, 50, 1.8),
+			# 	DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x06, 0x16, 55, 1.5),
+			# ]
 			damiao_data = [
-				DmActData(DM_Motor_Type.DM10010L, Control_Mode.MIT_MODE, 0x01, 0x11, 100, 3),
-				DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x0a, 0x12, 55, 1.5),
-				DmActData(DM_Motor_Type.DM6248, Control_Mode.MIT_MODE, 0x02, 0x13, 65, 1.8),
-				DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x03, 0x14, 70, 1.9),
-				DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x04, 0x15, 50, 1.8),
-				DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x05, 0x16, 55, 1.5),
+				DmActData(DM_Motor_Type.DM10010L, Control_Mode.MIT_MODE, 0x01, 0x11, 0, 0),
+				DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x02, 0x12, 0, 0),
+				DmActData(DM_Motor_Type.DM6248, Control_Mode.MIT_MODE, 0x03, 0x13, 0, 0),
+				DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x04, 0x14, 0, 0),
+				DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x05, 0x15, 0, 0),
+				DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x06, 0x16, 0, 0),
 			]
 			
 			# 添加达妙电机协议
@@ -1388,26 +1396,27 @@ class ICARM:
 	
 	def _read_motor_info(self):
 		"""Read and display motor information"""
-		print("\n" + "="*80)
-		print("MOTOR INFORMATION TABLE")
 		print("="*80)
-		print(f"{'Motor':<8} {'ID':<4} {'PMAX':<12} {'VMAX':<12} {'TMAX':<12} {'Status':<10}")
+		print(f"{'Motor':<8} {'ID':<4} {'Position':<12} {'Velocity':<12} {'Torque':<12} {'Status':<10}")
 		print("-"*80)
 		
-		for motor_name, motor in self.motors.items():
+		for motor_id, motor in self.motor_manager.motors.items():
 			try:
-				self.mc.refresh_motor_status(motor)
-				pmax = self.mc.read_motor_param(motor, DM_variable.PMAX)
-				vmax = self.mc.read_motor_param(motor, DM_variable.VMAX)
-				tmax = self.mc.read_motor_param(motor, DM_variable.TMAX)
+				# Update motor state
+				motor.update_state()
+				
+				# Get motor information
+				position = motor.get_position()
+				velocity = motor.get_velocity()
+				torque = motor.get_torque()
 				status = "OK"
 			except Exception as e:
-				pmax = vmax = tmax = "ERROR"
+				position = velocity = torque = "ERROR"
 				status = "FAIL"
-
 				print(e)
+			
 			time.sleep(0.001)
-			print(f"{motor_name:<8} {motor.SlaveID:<4} {pmax:<12} {vmax:<12} {tmax:<12} {status:<10}")
+			print(f"{motor.info.name:<8} {motor_id:<4} {position:<12.4f} {velocity:<12.4f} {torque:<12.4f} {status:<10}")
 		
 		print("="*80)
 		print()
@@ -1484,7 +1493,7 @@ class ICARM:
 		"""Close the connection and cleanup"""
 		try:
 			self.disable_all_motors()
-			self.serial_device.close()
+			# No need to close serial_device in unified motor control system
 			print("ICARM connection closed")
 		except Exception as e:
 			print(f"Error during cleanup: {e}")
