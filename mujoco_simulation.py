@@ -33,7 +33,8 @@ class MuJoCoICARMSimulation:
 		if urdf_path is None:
 			current_dir = os.path.dirname(os.path.abspath(__file__))
 			# urdf_path = os.path.join(current_dir, 'ic_arm_urdf', 'urdf', 'ic1.1.2.urdf')
-			urdf_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/robot/urdf/robot.urdf"
+			# urdf_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/robot/urdf/robot.urdf"
+			urdf_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/robot_8dof/urdf/robot_8dof.urdf"
 		self.urdf_path = urdf_path
 		
 		# Initialize IC ARM connection
@@ -55,7 +56,8 @@ class MuJoCoICARMSimulation:
 			'm2': 'joint2',  # Motor 2 -> Joint 2
 			'm3': 'joint3',  # Motor 3 -> Joint 3
 			'm4': 'joint4',  # Motor 4 -> Joint 4
-			'm5': 'joint5'   # Motor 5 -> Joint 5
+			'm5': 'joint5',   # Motor 5 -> Joint 5
+			"m6": 'joint6'
 		}
 		
 		# Get joint indices in MuJoCo model
@@ -146,13 +148,14 @@ class MuJoCoICARMSimulation:
 				'm2': {'rad': 0.0, 'deg': 0.0},
 				'm3': {'rad': 0.0, 'deg': 0.0},
 				'm4': {'rad': 0.0, 'deg': 0.0},
-				'm5': {'rad': 0.0, 'deg': 0.0}
+				'm5': {'rad': 0.0, 'deg': 0.0},
+				'm6': {'rad': 0.0, 'deg': 0.0}
 			}
 		
 		try:
 			# 直接读取每个电机的位置，确保获取最新数据
 			positions = {}
-			motor_names = ['m1', 'm2', 'm3', 'm4', 'm5']
+			motor_names = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6']
 			
 			for motor_name in motor_names:
 				try:
