@@ -14,7 +14,6 @@ from Python.unified_motor_control import MotorManager, MotorInfo, MotorType
 from Python.damiao import Motor_Control, DmActData, DM_Motor_Type, Control_Mode, limit_param as dm_limit
 from Python.ht_motor import HTMotorManager
 from Python.src import usb_class
-from minimum_gc import MinimumGravityCompensation as GC
 from usb_hw_wrapper import USBHardwareWrapper
 
 # ===== 全局配置 =====
@@ -197,6 +196,8 @@ class ICARM:
             # 重力补偿初始化
             self.gc_flag = gc 
             if self.gc_flag:
+
+                from minimum_gc import MinimumGravityCompensation as GC
                 self.gc = GC()
                 debug_print('✓ 重力补偿系统已启动')
         except Exception as e:
@@ -977,33 +978,18 @@ class ICARM:
                 debug_print("无法获取当前位置", 'ERROR')
                 return False
             
-            success_count = 0
-            total_motors = len(self.motors)
+            # 显示当前位置信息
+            for i, name in enumerate(MOTOR_LIST):
+                if i < len(current_positions):
+                    debug_print(f"{name}: 当前位置 {current_positions[i]:.2f}° 将设为零点")
             
-            for motor_name in self.motors.keys():
-                try:
-                    # 刷新电机状态以获取最新位置
-                    self.mc.refresh_motor_status(self.motors[motor_name])
-                    
-                    # 获取当前位置
-                    # current_pos = self.mc.get_motor_position(self.motors[motor_name])
-                    current_pos = self.motors[motor_name].state_q
-                    if current_pos is not None:
-                        # 设置当前位置为零点 (这里可以根据具体电机API调整)
-                        self.mc.set_zero_position(self.motors[motor_name])
-                        debug_print(f"{motor_name}: 当前位置 {np.degrees(current_pos):.2f}° 设为零点")
-                        success_count += 1
-                    else:
-                        debug_print(f"{motor_name}: 无法获取位置", 'WARNING')
-                        
-                except Exception as e:
-                    debug_print(f"{motor_name}: 设置零点失败 - {e}", 'ERROR')
+            # 使用MotorManager的set_all_zero方法设置所有电机的零点
+            success = self.motor_manager.set_all_zero()
             
-            success = success_count == total_motors
             if success:
-                debug_print(f"✓ 所有 {total_motors} 个关节零点设置成功")
+                debug_print(f"✓ 所有关节零点设置成功")
             else:
-                debug_print(f"⚠ 仅 {success_count}/{total_motors} 个关节零点设置成功", 'WARNING')
+                debug_print(f"⚠ 部分关节零点设置失败", 'WARNING')
             
             return success
             
@@ -1024,26 +1010,43 @@ class ICARM:
         debug_print(f"设置 {motor_name} 零点位置...")
         
         try:
-            if motor_name not in self.motors:
+            # 获取电机ID
+            motor_id = None
+            for i, name in enumerate(MOTOR_LIST):
+                if name == motor_name:
+                    motor_id = i + 1  # 电机ID从1开始
+                    break
+            
+            if motor_id is None:
                 debug_print(f"无效的电机名称: {motor_name}", 'ERROR')
                 return False
             
-            motor = self.motors[motor_name]
-            
-            # 刷新电机状态以获取最新位置
-            self.mc.refresh_motor_status(motor)
+            # 获取电机对象
+            motor = self.motor_manager.get_motor(motor_id)
+            if motor is None:
+                debug_print(f"无法获取电机 {motor_name} (电机ID: {motor_id})", 'ERROR')
+                return False
             
             # 获取当前位置
-            current_pos = self.mc.get_motor_position(motor)
+            state = motor.get_state()
+            current_pos = state['position']
             if current_pos is None:
                 debug_print(f"{motor_name}: 无法获取当前位置", 'ERROR')
                 return False
             
-            # 设置当前位置为零点 (这里可以根据具体电机API调整)
-            debug_print(f"{motor_name}: 当前位置 {np.degrees(current_pos):.2f}° 设为零点")
-            debug_print("注意: 这是软件零位，重启后需要重新设置", 'WARNING')
+            # 显示当前位置
+            debug_print(f"{motor_name}: 当前位置 {np.degrees(current_pos):.2f}° 将设为零点")
             
-            return True
+            # 设置零点
+            success = motor.set_zero()
+            
+            if success:
+                debug_print(f"✓ {motor_name} 零点设置成功")
+                debug_print("注意: 这是软件零位，重启后需要重新设置", 'WARNING')
+            else:
+                debug_print(f"⚠ {motor_name} 零点设置失败", 'ERROR')
+            
+            return success
             
         except Exception as e:
             debug_print(f"设置 {motor_name} 零点失败: {e}", 'ERROR')
