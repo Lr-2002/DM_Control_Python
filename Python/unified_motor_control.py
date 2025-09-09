@@ -464,7 +464,8 @@ class CANFrameDispatcher:
         self.handlers = {}  # protocol_name -> handler_function
         # 设置统一的回调函数
         self.usb_hw.setFrameCallback(self._unified_callback)
-    
+        self.hexify = lambda a: [hex(x) for x in a]
+
     def register_handler(self, protocol_name: str, handler_func):
         """注册协议处理函数"""
         self.handlers[protocol_name] = handler_func
@@ -473,7 +474,7 @@ class CANFrameDispatcher:
     def _unified_callback(self, frame: can_value_type):
         """统一的CAN帧回调函数"""
         can_id = frame.head.id
-        
+        # print(f"[RECV] from [{hex(frame.head.id)}]: {self.hexify(frame.data)}")
         # 根据CAN ID范围分发到不同的协议处理器
         try:
             # 达妙电机: ID范围通常是 0x01-0x06, 0x11-0x16 等
@@ -499,7 +500,7 @@ class MotorManager:
         self.usb_hw = usb_hw
         self.protocols = {}  # protocol_type -> protocol_instance
         self.motors = {}     # motor_id -> UnifiedMotor
-        
+        print('totally inited ', len(self.motors) , 'motors ')
         # 创建CAN帧分发器
         self.can_dispatcher = CANFrameDispatcher(usb_hw)
         
