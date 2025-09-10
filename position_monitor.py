@@ -101,7 +101,7 @@ def interactive_main():
     print("\n按 Ctrl+C 停止监控\n")
 
     try:
-        arm = ICARM(debug=False, gc=True)
+        arm = ICARM(debug=False, gc=False)
         arm.monitor_positions_continuous(
             update_rate=update_rate,
             duration=duration,
