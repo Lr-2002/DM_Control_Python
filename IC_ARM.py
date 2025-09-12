@@ -98,7 +98,7 @@ class ICARM:
                 DmActData(DM_Motor_Type.DM6248, Control_Mode.MIT_MODE, 0x03, 0x13, 0, 0),
                 DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x04, 0x14, 0, 0),
                 DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x05, 0x15, 0, 0),
-                DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x06, 0x16, 0, 0),
+                DmActData(DM_Motor_Type.DM4310, Control_Mode.MIT_MODE, 0x06, 0x16, 0, 0),
             ]
             
             # 添加达妙电机协议
