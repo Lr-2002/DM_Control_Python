@@ -3,16 +3,20 @@ import importlib.util
 import sys
 import os
 
-# Determine the correct .so file based on Python version
-python_version = f"cpython-{sys.version_info.major}{sys.version_info.minor}-{os.uname().machine}-linux-gnu"
+# Determine the correct .so file based on Python version and platform
+if sys.platform == "darwin":  # macOS
+	python_version = f"cpython-{sys.version_info.major}{sys.version_info.minor}-darwin"
+else:  # Linux
+	python_version = f"cpython-{sys.version_info.major}{sys.version_info.minor}-{os.uname().machine}-linux-gnu"
+print('sys platform', python_version)
 module_path = os.path.join(os.path.dirname(__file__), f"usb_class.{python_version}.so")
 
 # If the exact version doesn't exist, try to find any .so file
 if not os.path.exists(module_path):
-    for file in os.listdir(os.path.dirname(__file__)):
-        if file.startswith("usb_class.") and file.endswith(".so"):
-            module_path = os.path.join(os.path.dirname(__file__), file)
-            break
+	for file in os.listdir(os.path.dirname(__file__)):
+		if file.startswith("usb_class.") and file.endswith(".so"):
+			module_path = os.path.join(os.path.dirname(__file__), file)
+			break
 
 # Load the module
 spec = importlib.util.spec_from_file_location("usb_class", module_path)
