@@ -6,6 +6,19 @@ USB Hardware Wrapper
 """
 
 from Python.src import usb_class
+import signal 
+import sys 
+# Signal handler for Ctrl+C
+def signal_handler(signum, frame):
+    global running, usb_hw
+    print("\nInterrupt signal received. Exiting...")
+    running = False
+
+    # Force exit the program
+    sys.exit(0)
+
+# Register the signal handler
+signal.signal(signal.SIGINT, signal_handler)
 
 
 class USBHardwareWrapper:

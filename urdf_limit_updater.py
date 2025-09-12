@@ -220,7 +220,7 @@ def main():
     """主函数"""
     parser = argparse.ArgumentParser(description="URDF关节限制更新器")
     parser.add_argument("--urdf", type=str, 
-                       default="/Users/lr-2002/project/instantcreation/IC_arm_control/robot_8dof/urdf/robot_8dof.urdf",
+                       default="/home/lr-2002/project/InstantCreation/DM_Control_Python/ic_arm_8dof/urdf/ic_arm_8dof.urdf",
                        help="原始URDF文件路径")
     parser.add_argument("--output", type=str, help="输出URDF文件路径（可选）")
     parser.add_argument("--rate", type=float, default=10.0, help="更新频率 (Hz)")
