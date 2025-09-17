@@ -4,6 +4,8 @@ import math
 from enum import IntEnum
 import numpy as np
 from typing import List, Tuple, Optional
+
+# from Python.damiao import motor
 # from damiao import DM_Motor_Type
 
 # Motor control modes
@@ -444,7 +446,8 @@ class HTMotorManager:
         """
         if motor_id >= 10:
             motor_id = int(motor_id / 256)
-
+        if motor_id not in self.motors:
+            raise ValueError(f"Motor ID {motor_id} not found")
         return self.motors.get(motor_id)
 
     def mit_control(

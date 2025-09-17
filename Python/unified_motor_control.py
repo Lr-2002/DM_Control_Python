@@ -9,7 +9,8 @@ from enum import IntEnum
 from typing import Dict, List, Optional, Tuple, Any, Union
 import time
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import struct
 
 # 导入必要的模块
 try:
@@ -239,6 +240,123 @@ class DamiaoProtocol(MotorProtocol):
         motor = self.motors[motor_id]
         limits = motor.get_limit_param()
         return tuple(limits)
+
+
+class ServoProtocol(MotorProtocol):
+    """伺服电机协议实现 - 上层控制接口"""
+    
+    def __init__(self, usb_hw, servo_manager_instance=None):
+        super().__init__(usb_hw)
+        
+        # 使用底层ServoMotorManager实例
+        if servo_manager_instance is None:
+            from servo_motor import ServoMotorManager
+            self.servo_manager = ServoMotorManager(usb_hw, as_sub_module=True)
+        else:
+            self.servo_manager = servo_manager_instance
+            
+        # 电机ID映射 (上层ID -> 底层ServoMotor对象)
+        self.motor_mapping = {}
+        
+    def add_motor(self, motor_id: int, can_id: int, rx_id: int, name: str = "servo") -> bool:
+        """添加伺服电机"""
+        try:
+            # 在底层管理器中添加舵机
+            servo = self.servo_manager.add_servo(motor_id, can_id, rx_id)
+            
+            # 在上层记录电机信息
+            self.motors[motor_id] = {
+                'can_id': can_id,
+                'rx_id': rx_id,
+                'name': name,
+                'type': MotorType.SERVO
+            }
+            
+            # 建立映射关系
+            self.motor_mapping[motor_id] = servo
+            
+            return True
+            
+        except Exception as e:
+            print(f"添加舵机失败: {e}")
+            return False
+        
+    def enable_motor(self, motor_id: int) -> bool:
+        """使能电机"""
+        if motor_id not in self.motor_mapping:
+            return False
+            
+        servo = self.motor_mapping[motor_id]
+        return servo.enable()
+        
+    def disable_motor(self, motor_id: int) -> bool:
+        """失能电机"""
+        if motor_id not in self.motor_mapping:
+            return False
+            
+        servo = self.motor_mapping[motor_id]
+        return servo.disable()
+        
+    def set_command(self, motor_id: int, pos: float, vel: float, kp: float, kd: float, tau: float) -> bool:
+        """设置电机命令"""
+        if motor_id not in self.motor_mapping:
+            return False
+            
+        servo = self.motor_mapping[motor_id]
+        # 舵机协议中kp, kd, tau参数不使用，只使用pos和vel
+        return servo.set_position(pos, vel)
+        
+    def send_commands(self):
+        """发送所有缓存的命令"""
+        # 舵机协议中命令是立即发送的，这里不需要额外处理
+        pass
+        
+    def read_feedback(self, motor_id: int):
+        """读取电机反馈"""
+        if motor_id not in self.motor_mapping:
+            return None
+            
+        servo = self.motor_mapping[motor_id]
+        
+        # 请求读取状态
+        servo.read_status()
+        
+        # 返回当前状态
+        return {
+            'position': servo.get_position(),
+            'velocity': servo.get_velocity(),
+            'torque': servo.get_torque(),
+            'timestamp': time.time()
+        }
+        
+    def set_zero_position(self, motor_id: int) -> bool:
+        """设置当前位置为零位"""
+        # 舵机通常不支持软件零位设置
+        return False
+        
+    def get_limits(self, motor_id: int):
+        """获取电机限制参数"""
+        if motor_id not in self.motor_mapping:
+            return [3.14159, 10.0, 5.0]  # 默认限制
+            
+        servo = self.motor_mapping[motor_id]
+        return [servo.max_position, servo.max_velocity, servo.max_torque]
+        
+    def set_limits(self, motor_id: int, max_pos: float = None, min_pos: float = None, 
+                   max_vel: float = None, max_torque: float = None) -> bool:
+        """设置电机限制参数"""
+        if motor_id not in self.motor_mapping:
+            return False
+            
+        return self.servo_manager.set_limits(motor_id, max_pos, min_pos, max_vel, max_torque)
+        
+    def emergency_stop(self) -> bool:
+        """紧急停止所有舵机"""
+        return self.servo_manager.emergency_stop()
+        
+    def get_servo_manager(self):
+        """获取底层舵机管理器实例"""
+        return self.servo_manager
 
 
 class HTProtocol(MotorProtocol):
@@ -513,11 +631,23 @@ class MotorManager:
     
     def add_ht_protocol(self, ht_manager_instance):
         """添加HT电机协议"""
-        protocol = HTProtocol(self.usb_hw, ht_manager_instance)
-        self.protocols['ht'] = protocol
-        # 注册HT电机的CAN帧处理函数
-        self.can_dispatcher.register_handler('ht', ht_manager_instance.can_frame_callback)
-    
+        if 'ht' not in self.protocols:
+            self.protocols['ht'] = HTProtocol(self.usb_hw, ht_manager_instance)
+            # 注册HT协议处理函数
+            self.can_dispatcher.register_handler('ht', self.protocols['ht']._process_feedback)
+            return True
+        return False
+        
+    def add_servo_protocol(self):
+        """添加伺服电机协议"""
+        if 'servo' not in self.protocols:
+            self.servo_protocol = ServoProtocol(self.usb_hw)
+            self.protocols['servo'] = self.servo_protocol
+            # 注册伺服协议处理函数
+            self.can_dispatcher.register_handler('servo', self.servo_protocol._process_feedback)
+            return True
+        return False
+        
     def add_motor(self, motor_id: int, motor_type: str, motor_info: MotorInfo, **config) -> bool:
         """添加电机"""
         if motor_type not in self.protocols:
