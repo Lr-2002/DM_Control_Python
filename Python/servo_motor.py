@@ -1,3 +1,4 @@
+from platform import java_ver
 import struct
 import time
 import math
@@ -11,6 +12,7 @@ class ServoControlMode(IntEnum):
 	ENABLE = 0x01   # 使能
 	POSITION = 0x02 # 位置控制
 	READ = 0x03     # 读取状态
+	MID = 0x04      # 中位
 
 class ServoMotor:
 	"""
@@ -60,7 +62,15 @@ class ServoMotor:
 		if success:
 			self.enabled = False
 		return success
-		
+	def set_mid(self):
+		cmd = [ServoControlMode.MID, 0, 0, 0, 0, 0, 0 , 0]
+		success = self._send_command(cmd)
+		if success:
+			print(f'[motor {self.can_id}] set mid success')
+		else:
+			print(f'[motor {self.can_id}] set mid failed')
+
+
 	def set_position(self, position: int, velocity: int = 100) -> bool:
 		"""
 		设置舵机位置
@@ -88,7 +98,10 @@ class ServoMotor:
 	def read_status(self) -> bool:
 		"""读取舵机状态"""
 		cmd = [ServoControlMode.READ, 0, 0, 0, 0, 0, 0, 0]
-		return self._send_command(cmd)
+		
+		mark = self._send_command(cmd)
+		time.sleep(0.005)
+		return mark
 		
 	def get_position(self) -> int:
 		"""获取当前位置 (0-4095)"""
@@ -116,6 +129,7 @@ class ServoMotor:
 		try:
 		   
 			self.usb_hw.fdcanFrameSend(cmd, self.can_id)
+			time.sleep(0.005)
 			return True
 			
 		except Exception as e:
@@ -142,7 +156,7 @@ class ServoMotor:
 			self.position = pos_int
 			self.velocity = vel_int
 			self.torque = torque_int
-			print(' the data for ',self.can_id, self.position, self.velocity, self.torque)          
+			# print(' the data for ',self.can_id, self.position, self.velocity, self.torque)          
 			return True
 			
 		except Exception as e:
@@ -244,7 +258,6 @@ class ServoMotorManager:
 		for servo in self.servos.values():
 			if not servo.read_status():
 				success = False
-			time.sleep(0.005)
 		return success
 		
 	def get_all_positions(self) -> Dict[int, float]:
@@ -312,6 +325,13 @@ class ServoMotorManager:
 			
 		return True
 
+	# def set_mids(self, motor_id=None):
+	# 	if motor_id:
+	# 		self.servos[motor_id].set_mid()
+	# 	else:
+	# 		for servo in self.servos.values():
+	# 			servo.set_mid()
+
 if __name__ =='__main__':
 	# 底层舵机测试代码
 	import time
@@ -335,6 +355,10 @@ if __name__ =='__main__':
 	servo1 = servo_manager.add_servo(1, 0x09, 0x19)
 	print(f"   添加舵机1: ID=1, CAN=0x09, RX=0x19")
 	
+	servo_manager.disable_all()
+	while True:
+		pos= servo_manager.get_all_positions()
+		print(pos)
 	# # 测试批量使能
 	# print("2. 批量使能:")
 	# servo_manager.enable_all()
@@ -350,8 +374,8 @@ if __name__ =='__main__':
 	print("5. 批量位置设置:")
 	# 获取当前位置
 	current_positions = servo_manager.get_all_positions()
-	print(f"   当前位置: {current_positions}")
-	
+	# print(f"   当前位置: {current_positions}")
+	input('开始运动？ ')
 	# 根据当前位置进行±500控制
 	positions = {}
 	velocities = {}

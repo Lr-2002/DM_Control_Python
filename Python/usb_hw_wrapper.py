@@ -75,7 +75,7 @@ class USBHardwareWrapper:
         return self.usb_hw.__exit__(exc_type, exc_val, exc_tb)
 
     def fdcanFrameSend(self, data, id):
-        print(f"Sending to [{hex(id)}]: {[hex(i) for i in data]} ")
+        # print(f"Sending to [{hex(id)}]: {[hex(i) for i in data]} ")
         return self.usb_hw.fdcanFrameSend(data, id)
 
 
