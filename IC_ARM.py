@@ -67,163 +67,73 @@ def validate_array(array: np.ndarray, expected_shape: Tuple, name: str) -> bool:
     return True
 
 class ICARM:
-    def __init__(self, device_sn="F561E08C892274DB09496BCC1102DBC5", debug=False, gc=False, use_ht=False):
+    def __init__(self, device_sn="F561E08C892274DB09496BCC1102DBC5", debug=False, gc=False):
         """Initialize IC ARM with unified motor control system"""
         self.debug = debug
-        self.use_ht = use_ht
+        self.use_ht = True
         debug_print("=== 初始化IC_ARM_Unified ===")
  
-        try:
-            # 初始化统一电机控制系统
-            debug_print("初始化统一电机控制系统...")
-            
-            # 创建USB硬件接口
-            usb_hw = usb_class(1000000, 5000000, device_sn)
-            usb_hw = USBHardwareWrapper(usb_hw)
-            # 创建电机管理器
-            self.motor_manager = MotorManager(usb_hw)
-            
-            # 配置达妙电机数据
-            # damiao_data = [
-            #   DmActData(DM_Motor_Type.DM10010L, Control_Mode.MIT_MODE, 0x01, 0x11, 100, 3),
-            #   DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x02, 0x12, 55, 1.5),
-            #   DmActData(DM_Motor_Type.DM6248, Control_Mode.MIT_MODE, 0x03, 0x13, 65, 1.8),
-            #   DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x04, 0x14, 70, 1.9),
-            #   DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x05, 0x15, 50, 1.8),
-            #   DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x06, 0x16, 55, 1.5),
-            # ]
-            damiao_data = [
-                DmActData(DM_Motor_Type.DM10010L, Control_Mode.MIT_MODE, 0x01, 0x11, 0, 0),
-                DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x02, 0x12, 0, 0),
-                DmActData(DM_Motor_Type.DM6248, Control_Mode.MIT_MODE, 0x03, 0x13, 0, 0),
-                DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x04, 0x14, 0, 0),
-                DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x05, 0x15, 0, 0),
-                DmActData(DM_Motor_Type.DM4310, Control_Mode.MIT_MODE, 0x06, 0x16, 0, 0),
-            ]
-            self.motors_data = [
-                MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 0, 0),
-                MotorInfo(2,MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x02, 0x12, 0, 0),
-                MotorInfo(3,MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 0, 0),
-                MotorInfo(4,MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 0, 0),
-                MotorInfo(5,MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 0, 0),
-                MotorInfo(6,MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 0, 0),
-                MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 0, 0 ),
-                MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 0, 0 ),
-                MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0 )
-            ]   
-            # 添加达妙电机协议
-            dm_manager = DmMotorManager(usb_hw=usb_hw)
-            ht_manager = HTMotorManager(usb_hw=usb_hw)
-            servo_manager = ServoMotorManager(usb_hw=usb_hw)
-
-            dm_manager = DamiaoProtocol(usb_hw, dm_manager)
-            ht_manager = HTProtocol(usb_hw, ht_manager)
-            servo_manager = ServoProtocol(usb_hw, servo_manager)
-            self.manager_trans = {MotorType.DAMIAO: dm_manager, MotorType.HIGH_TORQUE:ht_manager, MotorType.SERVO:servo_manager}
-            for motor_data in self.motors_data:
-                self.manager_trans[motor_data.motor_type].add_motor(motor_data)                  
-            self.motor_manager.add_damiao_protocol(dm_manager)
-            
-            # 如果需要HT电机，添加HT协议
-            if use_ht:
-                ht_manager = HTMotorManager(usb_hw)
-                self.motor_manager.add_ht_protocol(ht_manager)
-            
-            # 添加具体电机到管理器
-            if use_ht:
-                # 混合配置：前6个达妙电机 + 后2个HT电机
-                debug_print("配置混合电机系统（达妙+HT）...")
-                
-                # 添加6个达妙电机 (1-6)
-                for i in range(6):
-                    motor_info = MotorInfo(
-                        motor_id=i+1,
-                        motor_type=MotorType.DAMIAO,
-                        can_id=damiao_data[i].can_id,
-                        name=f"m{i+1}",
-                        kp=damiao_data[i].kp,
-                        kd=damiao_data[i].kd,
-                        limits=dm_limit[damiao_data[i].motorType.value]
-                    )
-                    success = self.motor_manager.add_motor(i+1, 'damiao', motor_info, can_id=damiao_data[i].can_id)
-                    if success:
-                        debug_print(f"  ✓ 达妙电机 m{i+1} 添加成功")
-                    else:
-                        debug_print(f"  ✗ 达妙电机 m{i+1} 添加失败", 'ERROR')
-                
-                # 添加2个HT电机 (7-8)
-                for i in range(2):
-                    motor_info = MotorInfo(
-                        motor_id=i + 7,
-                        motor_type=MotorType.HIGH_TORQUE,
-                        can_id=0x8094,  # HT电机使用固定的发送ID
-                        name=f"ht_{i+7}",
-                        kp=0,
-                        kd=0,
-                        limits=[12.5, 50.0, 20.0],  # HT电机扭矩限制更高
-                    )
-                    success = self.motor_manager.add_motor(i + 7, "ht", motor_info, ht_motor_id=i + 7)
-                    if success:
-                        debug_print(f"  ✓ HT电机 ht_{i+7} 添加成功")
-                    else:
-                        debug_print(f"  ✗ HT电机 ht_{i+7} 添加失败", 'ERROR')
-            else:
-                # 纯达妙电机配置
-                debug_print("配置纯达妙电机系统...")
-                for i in range(6):
-                    motor_info = MotorInfo(
-                        motor_id=i+1,
-                        motor_type=MotorType.DAMIAO,
-                        can_id=damiao_data[i].can_id,
-                        name=f"m{i+1}",
-                        kp=damiao_data[i].kp,
-                        kd=damiao_data[i].kd,
-                        limits=dm_limit[damiao_data[i].motorType.value]
-                    )
-                    success = self.motor_manager.add_motor(i+1, 'damiao', motor_info, can_id=damiao_data[i].can_id)
-                    if success:
-                        debug_print(f"  ✓ 达妙电机 m{i+1} 添加成功")
-                    else:
-                        debug_print(f"  ✗ 达妙电机 m{i+1} 添加失败", 'ERROR')
-            
-            # State variables (all in radians and SI units) - 内部维护的状态变量
-            debug_print("初始化状态变量...")
-            # 根据是否使用HT电机决定状态变量大小
-            motor_count = NUM_MOTORS_WITH_HT if use_ht else NUM_MOTORS
-            self.motor_count = motor_count  # 保存实际电机数量
-            
-            self.q = np.zeros(motor_count, dtype=np.float64)        # Joint positions (rad)
-            self.dq = np.zeros(motor_count, dtype=np.float64)       # Joint velocities (rad/s)
-            self.ddq = np.zeros(motor_count, dtype=np.float64)      # Joint accelerations (rad/s²)
-            self.tau = np.zeros(motor_count, dtype=np.float64)      # Joint torques (N·m)
-            self.currents = np.zeros(motor_count, dtype=np.float64) # Joint currents (A)
-            
-            # History for numerical differentiation
-            self.q_prev = np.zeros(motor_count, dtype=np.float64)
-            self.dq_prev = np.zeros(motor_count, dtype=np.float64)
-            self.last_update_time = time.time()
-            
-            # 验证状态变量
-            self._validate_internal_state()
-            debug_print("✓ 状态变量初始化成功")
-            
-            # 使能所有电机并初始化状态
-            debug_print("使能电机并初始化状态...")
-            self.enable()
-            self._refresh_all_states()
-            debug_print("✓ IC_ARM_Unified 初始化完成")
-            
-            # 重力补偿初始化
-            self.gc_flag = gc 
-            if self.gc_flag:
-
-                from minimum_gc import MinimumGravityCompensation as GC
-                self.gc = GC()
-                debug_print('✓ 重力补偿系统已启动')
-        except Exception as e:
-            debug_print(f"✗ 初始化失败: {e}", 'ERROR')
-            debug_print(f"详细错误: {traceback.format_exc()}", 'ERROR')
-            raise
+        # 初始化统一电机控制系统
+        usb_hw = usb_class(1000000, 5000000, device_sn)
+        usb_hw = USBHardwareWrapper(usb_hw)
+        self.motor_manager = MotorManager(usb_hw)
+        
+        # 电机配置数据
+        self.motors_data = [
+            MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 0, 0),
+            MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x02, 0x12, 0, 0),
+            MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 0, 0),
+            MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 0, 0),
+            MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 0, 0),
+            MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 0, 0),
+            MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 0, 0),
+            MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 0, 0),
+            MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0)
+        ]
+        
+        # 创建协议管理器
+        dm_protocol = DamiaoProtocol(usb_hw, DmMotorManager(usb_hw=usb_hw))
+        ht_protocol = HTProtocol(usb_hw, HTMotorManager(usb_hw=usb_hw))
+        servo_protocol = ServoProtocol(usb_hw, ServoMotorManager(usb_hw=usb_hw))
+        
+        self.protocols = {
+            MotorType.DAMIAO: dm_protocol,
+            MotorType.HIGH_TORQUE: ht_protocol,
+            MotorType.SERVO: servo_protocol
+        }
+        
+        # 添加电机到对应协议
+        for motor_data in self.motors_data:
+            self.protocols[motor_data.motor_type].add_motor(motor_data)
+        
+        self.motor_manager.add_damiao_protocol(dm_protocol)
+        self.motor_manager.add_ht_protocol(ht_protocol)
+        self.motor_manager.add_servo_protocol(servo_protocol)   
+        # 初始化状态变量
+        motor_count = len(self.motors_data) 
+        self.motor_count = motor_count
+        
+        self.q = np.zeros(motor_count, dtype=np.float64)
+        self.dq = np.zeros(motor_count, dtype=np.float64)
+        self.ddq = np.zeros(motor_count, dtype=np.float64)
+        self.tau = np.zeros(motor_count, dtype=np.float64)
+        self.currents = np.zeros(motor_count, dtype=np.float64)
+        
+        self.q_prev = np.zeros(motor_count, dtype=np.float64)
+        self.dq_prev = np.zeros(motor_count, dtype=np.float64)
+        self.last_update_time = time.time()
+        
+        self._validate_internal_state()
+        
+        # 使能所有电机并初始化状态
+        self.enable()
+        self._refresh_all_states()
+        
+        # 重力补偿初始化
+        self.gc_flag = gc 
+        if self.gc_flag:
+            from minimum_gc import MinimumGravityCompensation as GC
+            self.gc = GC()
     
     def _validate_internal_state(self):
         """验证内部状态变量的完整性"""
@@ -248,115 +158,29 @@ class ICARM:
     # ========== LOW-LEVEL MOTOR READ FUNCTIONS ==========
     # 使用unified_motor_control接口读取电机状态
     
-    def _read_motor_position_raw(self, motor_id: int) -> float:
-        """Read position from a single motor using unified interface"""
-        if self.debug:
-            debug_print(f"读取电机 {motor_id} 位置...")
-        
-        try:
-            motor = self.motor_manager.get_motor(motor_id)
-            if motor is None:
-                debug_print(f"电机 {motor_id} 不存在", 'ERROR')
-                return 0.0
-            
-            state = motor.get_state()
-            position = state['position']
-            
-            if self.debug:
-                debug_print(f"  ✓ 电机 {motor_id} 位置: {position:.4f} rad")
-            
-            return position
-            
-        except Exception as e:
-            debug_print(f"读取电机 {motor_id} 位置失败: {e}", 'ERROR')
-            return 0.0
-    
-    def _read_motor_velocity_raw(self, motor_id: int) -> float:
-        """Read velocity from a single motor using unified interface"""
-        if self.debug:
-            debug_print(f"读取电机 {motor_id} 速度...")
-        
-        try:
-            motor = self.motor_manager.get_motor(motor_id)
-            if motor is None:
-                debug_print(f"电机 {motor_id} 不存在", 'ERROR')
-                return 0.0
-            
-            state = motor.get_state()
-            velocity = state['velocity']
-            
-            if self.debug:
-                debug_print(f"  ✓ 电机 {motor_id} 速度: {velocity:.4f} rad/s")
-            
-            return velocity
-            
-        except Exception as e:
-            debug_print(f"读取电机 {motor_id} 速度失败: {e}", 'ERROR')
-            return 0.0
-    
-    def _read_motor_torque_raw(self, motor_id: int) -> float:
-        """Read torque from a single motor using unified interface"""
-        if self.debug:
-            debug_print(f"读取电机 {motor_id} 力矩...")
-        
-        try:
-            motor = self.motor_manager.get_motor(motor_id)
-            if motor is None:
-                debug_print(f"电机 {motor_id} 不存在", 'ERROR')
-                return 0.0
-            
-            state = motor.get_state()
-            torque = state['torque']
-            
-            if self.debug:
-                debug_print(f"  ✓ 电机 {motor_id} 力矩: {torque:.4f} N·m")
-            
-            return torque
-            
-        except Exception as e:
-            debug_print(f"读取电机 {motor_id} 力矩失败: {e}", 'ERROR')
-            return 0.0
+    def _read_motor_state(self, motor_id: int) -> dict:
+        """Read state from a single motor using unified interface"""
+        motor = self.motor_manager.get_motor(motor_id)
+        if motor is None:
+            return {'position': 0.0, 'velocity': 0.0, 'torque': 0.0}
+        return motor.get_state()
     
    
     # ========== BATCH READ FUNCTIONS ==========
     
-    def _read_all_positions_raw(self):
-        """Read positions from all motors using unified interface"""
+    def _read_all_states(self):
+        """Read all motor states using unified interface"""
         positions = np.zeros(self.motor_count)
-        
-        for i in range(self.motor_count):
-            positions[i] = self._read_motor_position_raw(i+1)  # motor_id starts from 1
-        
-        return positions
-    
-    def _read_all_velocities_raw(self):
-        """Read velocities from all motors using unified interface"""
         velocities = np.zeros(self.motor_count)
-        
-        for i in range(self.motor_count):
-            velocities[i] = self._read_motor_velocity_raw(i+1)  # motor_id starts from 1
-        
-        return velocities
-    
-    def _read_all_torques_raw(self):
-        """Read torques from all motors using unified interface"""
         torques = np.zeros(self.motor_count)
         
         for i in range(self.motor_count):
-            torques[i] = self._read_motor_torque_raw(i+1)  # motor_id starts from 1
+            state = self._read_motor_state(i+1)
+            positions[i] = state['position']
+            velocities[i] = state['velocity']
+            torques[i] = state['torque']
         
-        return torques
-    
-    def _read_all_currents_raw(self):
-        """Estimate currents from torques (DM_CAN doesn't provide direct current reading)"""
-        currents = np.zeros(self.motor_count)
-        torques = self._read_all_torques_raw()
-        
-        # 估算电流（使用力矩常数，需要校准）
-        for i in range(self.motor_count):
-            currents[i] = torques[i] / 0.1  # 假设力矩常数为0.1 N·m/A
-        
-        return currents
+        return positions, velocities, torques
     
     # ========== STATE UPDATE FUNCTIONS ==========
     
@@ -365,87 +189,25 @@ class ICARM:
         current_time = time.time()
         dt = current_time - self.last_update_time
         
-        # 使用统一电机控制系统更新所有状态
         self.motor_manager.update_all_states()
+        self.q, self.dq, self.tau = self._read_all_states()
         
-        # 读取所有电机状态
-        for i in range(self.motor_count):
-            motor = self.motor_manager.get_motor(i+1)
-            if motor:
-                state = motor.get_state()
-                self.q[i] = state['position']
-                self.dq[i] = state['velocity']
-                self.tau[i] = state['torque']
-        
-        # Calculate accelerations using numerical differentiation
         if dt > 0 and hasattr(self, 'dq_prev'):
             self.ddq = (self.dq - self.dq_prev) / dt
         
-        # 估算电流
-        self.currents = self.tau / 0.1  # 简单估算
+        self.currents = self.tau / 0.1
         
-        # Update history for next iteration
         self.q_prev = self.q.copy()
         self.dq_prev = self.dq.copy()
         self.last_update_time = current_time
     
     def _refresh_all_states_fast(self):
-        """快速状态刷新，使用统一电机控制系统"""
-        current_time = time.time()
-        dt = current_time - self.last_update_time
-        
-        # 使用统一系统快速更新状态
-        self.motor_manager.update_all_states()
-        
-        # 快速读取所有电机状态
-        for i in range(self.motor_count):
-            motor = self.motor_manager.get_motor(i+1)
-            if motor:
-                state = motor.get_state()
-                self.q[i] = state['position']
-                self.dq[i] = state['velocity']
-                self.tau[i] = state['torque']
-        
-        # 计算加速度（数值微分）
-        if dt > 0 and hasattr(self, 'dq_prev'):
-            self.ddq = (self.dq - self.dq_prev) / dt
-        
-        # 估算电流
-        self.currents = self.tau / 0.1  # 简单估算
-        
-        # 更新历史
-        self.q_prev = self.q.copy()
-        self.dq_prev = self.dq.copy()
-        self.last_update_time = current_time
+        """快速状态刷新"""
+        self._refresh_all_states()
     
     def _refresh_all_states_ultra_fast(self):
-        """超快速状态刷新，使用统一电机控制系统的优化接口"""
-        current_time = time.time()
-        dt = current_time - self.last_update_time
-        
-        # 使用统一系统的快速更新
-        self.motor_manager.update_all_states()
-        
-        # 超快速读取所有电机状态
-        for i in range(self.motor_count):
-            motor = self.motor_manager.get_motor(i+1)
-            if motor:
-                state = motor.get_state()
-                self.q[i] = state['position']
-                self.dq[i] = state['velocity']
-                self.tau[i] = state['torque']
-        
-        # 最简化的加速度计算
-        if dt > 0 and hasattr(self, 'dq_prev'):
-            self.ddq = (self.dq - self.dq_prev) / dt
-        
-        # 简化电流估算
-        self.currents = self.tau * 10.0  # 快速估算，避免除法
-        
-        # 最小化历史更新
-        self.q_prev = self.q.copy()
-        self.dq_prev = self.dq.copy()
-        self.last_update_time = current_time
+        """超快速状态刷新"""
+        self._refresh_all_states()
     
     # ========== PUBLIC READ INTERFACES ==========
     
@@ -480,60 +242,16 @@ class ICARM:
         return self.currents.copy()  # 返回内部维护的电流副本
     
     def get_complete_state(self) -> Dict[str, Union[np.ndarray, float]]:
-        """Get complete robot state with debug support"""
-        if self.debug:
-            debug_print("获取完整机器人状态...")
-        
-        try:
-            # 刷新所有状态
-            if self.debug:
-                debug_print("  刷新所有状态...")
-            self._refresh_all_states()
-            
-            # 验证内部状态
-            self._validate_internal_state()
-            
-            # 构建状态字典
-            state = {
-                'positions': self.q.copy(),      # rad
-                'velocities': self.dq.copy(),    # rad/s
-                'accelerations': self.ddq.copy(), # rad/s²
-                'torques': self.tau.copy(),      # N·m
-                'currents': self.currents.copy(), # A
-                'timestamp': self.last_update_time
-            }
-            
-            # 验证返回的状态
-            if self.debug:
-                debug_print("  验证返回状态...")
-                for key, value in state.items():
-                    if key == 'timestamp':
-                        if not validate_type(value, (int, float), f'state.{key}'):
-                            raise ValueError(f"Invalid timestamp type: {type(value)}")
-                    else:
-                        if not validate_array(value, (self.motor_count,), f'state.{key}'):
-                            raise ValueError(f"Invalid state array {key}")
-                        debug_print(f"    {key}: {value[:2]}... (shape: {value.shape}, dtype: {value.dtype})")
-            
-            if self.debug:
-                debug_print("✓ 完整状态获取成功")
-            
-            return state
-            
-        except Exception as e:
-            debug_print(f"获取完整状态失败: {e}", 'ERROR')
-            debug_print(f"详细错误: {traceback.format_exc()}", 'ERROR')
-            
-            # 返回安全的默认状态
-            debug_print("返回安全的默认状态", 'WARNING')
-            return {
-                'positions': np.zeros(self.motor_count, dtype=np.float64),
-                'velocities': np.zeros(self.motor_count, dtype=np.float64),
-                'accelerations': np.zeros(self.motor_count, dtype=np.float64),
-                'torques': np.zeros(self.motor_count, dtype=np.float64),
-                'currents': np.zeros(self.motor_count, dtype=np.float64),
-                'timestamp': time.time()
-            }
+        """Get complete robot state"""
+        self._refresh_all_states()
+        return {
+            'positions': self.q.copy(),
+            'velocities': self.dq.copy(),
+            'accelerations': self.ddq.copy(),
+            'torques': self.tau.copy(),
+            'currents': self.currents.copy(),
+            'timestamp': self.last_update_time
+        }
     
     # ========== CONVENIENCE READ FUNCTIONS ==========
     
@@ -564,29 +282,14 @@ class ICARM:
     
     # ========== LOW-LEVEL WRITE FUNCTIONS ==========
     
-    def _send_motor_command_raw(self, motor_id, position_rad=0.0, velocity_rad_s=0.0, torque_nm=0.0):
+    def _send_motor_command(self, motor_id, position_rad=0.0, velocity_rad_s=0.0, torque_nm=0.0):
         """Send command to a single motor using unified interface"""
-        try:
-            motor = self.motor_manager.get_motor(motor_id)
-            if motor is None:
-                debug_print(f"Motor {motor_id} not found", 'ERROR')
-                return False
-            
-            # 使用电机的默认kp, kd参数
-            motor_info = motor.motor_info
-            kp = motor_info.kp
-            kd = motor_info.kd
-            
-            if self.debug:
-                debug_print(f"Sending command to motor {motor_id}: kp={kp}, kd={kd}, position={position_rad}, velocity={velocity_rad_s}, torque={torque_nm}")
-            
-            # 使用统一电机控制系统发送命令
-            success = motor.set_command(position_rad, velocity_rad_s, kp, kd, torque_nm)
-            return success
-            
-        except Exception as e:
-            debug_print(f"Failed to send command to motor {motor_id}: {e}", 'ERROR')
+        motor = self.motor_manager.get_motor(motor_id)
+        if motor is None:
             return False
+        
+        motor_info = motor.motor_info
+        return motor.set_command(position_rad, velocity_rad_s, motor_info.kp, motor_info.kd, torque_nm)
     
     # ========== PUBLIC WRITE INTERFACES ==========
     
@@ -595,15 +298,7 @@ class ICARM:
     def set_joint_position(self, joint_index, position_rad, velocity_rad_s=0.0, torque_nm=0.0):
         """Set position of a single joint using unified interface"""
         if joint_index < self.motor_count:
-            motor_id = joint_index + 1  # motor_id starts from 1
-            if self.debug:
-                debug_print(f"Setting joint {joint_index} position to {position_rad} rad, velocity to {velocity_rad_s} rad/s, torque to {torque_nm} Nm")
-            return self._send_motor_command_raw(
-                motor_id, 
-                position_rad, 
-                velocity_rad_s, 
-                torque_nm
-            )
+            return self._send_motor_command(joint_index + 1, position_rad, velocity_rad_s, torque_nm)
         return False
 
     def set_joint_torque(self, torques_nm):
@@ -613,18 +308,9 @@ class ICARM:
         
         success = True
         for i in range(min(self.motor_count, len(torques_nm))):
-            if self.debug:
-                debug_print(f"Setting joint {i} torque to {torques_nm[i]} Nm")
-            result = self._send_motor_command_raw(
-                i + 1,  # motor_id starts from 1
-                position_rad=0,
-                velocity_rad_s=0,
-                torque_nm=torques_nm[i]
-            )
+            result = self._send_motor_command(i + 1, 0, 0, torques_nm[i])
             success = success and result
         
-        if not success: 
-            debug_print('Joint torque setting failed', 'ERROR')
         return success   
 
     def set_joint_positions_with_gc(self, positions_rad, velocities_rad_s=None):
@@ -639,18 +325,10 @@ class ICARM:
             torques_nm = np.zeros(self.motor_count)
         
         success = True
-        # breakpoint()
         for i in range(min(self.motor_count, len(positions_rad))):
-            result = self.set_joint_position(
-                i, 
-                positions_rad[i], 
-                velocities_rad_s[i], 
-                torques_nm[i]
-            )
+            result = self.set_joint_position(i, positions_rad[i], velocities_rad_s[i], torques_nm[i])
             success = success and result
         
-            if not success: 
-                print('------ run error')
         return success
     
     def set_joint_positions_degrees(self, positions_deg, velocities_deg_s=None, torques_nm=None):
@@ -1409,6 +1087,8 @@ class ICARM:
                     break
                 
                 # 获取当前状态
+                # self._refresh_all_states_ultra_fast()
+                self._refresh_all_states()
                 try:
                     positions = self.get_positions_degrees(refresh=True)
                     velocities = self.get_velocities_degrees(refresh=False)  # 使用已刷新的数据
