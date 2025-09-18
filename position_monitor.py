@@ -69,53 +69,15 @@ def interactive_main():
     print("=== ICARM Position Monitor (交互模式) ===")
     print()
 
-    # 询问是否保存CSV
-    save_csv = input("是否保存数据到CSV文件? (y/N): ").lower() == "y"
-
-    csv_filename = None
-    if save_csv:
-        filename_input = input("请输入CSV文件名 (留空自动生成): ").strip()
-        if filename_input:
-            csv_filename = filename_input
-
-    # 询问更新频率
-    rate_input = input("请输入更新频率 (Hz，默认10): ").strip()
-    try:
-        update_rate = float(rate_input) if rate_input else 10.0
-    except ValueError:
-        update_rate = 10.0
-
-    # 询问监控时长
-    duration_input = input("请输入监控时长 (秒，留空为无限制): ").strip()
-    try:
-        duration = float(duration_input) if duration_input else None
-    except ValueError:
-        duration = None
-
     print("\n=== 开始监控 ===")
-    print(f"更新频率: {update_rate} Hz")
-    print(f"监控时长: {duration if duration else '无限制'} 秒")
-    print(f"CSV保存: {'启用' if save_csv else '禁用'}")
-    if save_csv and csv_filename:
-        print(f"CSV文件: {csv_filename}")
-    print("\n按 Ctrl+C 停止监控\n")
 
-    try:
-        arm = ICARM(debug=False, gc=False)
-        arm.monitor_positions_continuous(
-            update_rate=update_rate,
-            duration=duration,
-            save_csv=save_csv,
-            csv_filename=csv_filename,
-        )
-    except Exception as e:
-        print(f"Error: {e}")
-    finally:
-        try:
-            arm.close()
-        except:
-            pass
-
+    arm = ICARM(debug=False, gc=False)
+    arm.monitor_positions_continuous(
+        update_rate=100,
+        duration=None,
+        save_csv=False,
+        csv_filename=None,
+    )
 
 if __name__ == "__main__":
     import sys
