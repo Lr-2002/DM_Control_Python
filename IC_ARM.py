@@ -10,9 +10,10 @@ import traceback
 import logging
 from typing import Dict, List, Optional, Tuple, Any, Union
 # 使用新的统一电机控制系统
-from Python.unified_motor_control import MotorManager, MotorInfo, MotorType
-from Python.damiao import Motor_Control, DmActData, DM_Motor_Type, Control_Mode, limit_param as dm_limit
+from Python.unified_motor_control import DamiaoProtocol, HTProtocol, MotorManager, MotorInfo, MotorType, ServoProtocol
+from Python.damiao import DmMotorManager, DmActData, DM_Motor_Type, Control_Mode, Motor, limit_param as dm_limit
 from Python.ht_motor import HTMotorManager
+from Python.servo_motor import ServoMotorManager
 from Python.src import usb_class
 from usb_hw_wrapper import USBHardwareWrapper
 
@@ -99,10 +100,29 @@ class ICARM:
                 DmActData(DM_Motor_Type.DM4340, Control_Mode.MIT_MODE, 0x05, 0x15, 0, 0),
                 DmActData(DM_Motor_Type.DM4310, Control_Mode.MIT_MODE, 0x06, 0x16, 0, 0),
             ]
-            
+            self.motors_data = [
+                MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 0, 0),
+                MotorInfo(2,MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x02, 0x12, 0, 0),
+                MotorInfo(3,MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 0, 0),
+                MotorInfo(4,MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 0, 0),
+                MotorInfo(5,MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 0, 0),
+                MotorInfo(6,MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 0, 0),
+                MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 0, 0 ),
+                MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 0, 0 ),
+                MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0 )
+            ]   
             # 添加达妙电机协议
-            motor_control = Motor_Control(usb_hw=usb_hw, data_ptr=damiao_data)
-            self.motor_manager.add_damiao_protocol(motor_control)
+            dm_manager = DmMotorManager(usb_hw=usb_hw)
+            ht_manager = HTMotorManager(usb_hw=usb_hw)
+            servo_manager = ServoMotorManager(usb_hw=usb_hw)
+
+            dm_manager = DamiaoProtocol(usb_hw, dm_manager)
+            ht_manager = HTProtocol(usb_hw, ht_manager)
+            servo_manager = ServoProtocol(usb_hw, servo_manager)
+            self.manager_trans = {MotorType.DAMIAO: dm_manager, MotorType.HIGH_TORQUE:ht_manager, MotorType.SERVO:servo_manager}
+            for motor_data in self.motors_data:
+                self.manager_trans[motor_data.motor_type].add_motor(motor_data)                  
+            self.motor_manager.add_damiao_protocol(dm_manager)
             
             # 如果需要HT电机，添加HT协议
             if use_ht:
