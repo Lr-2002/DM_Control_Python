@@ -17,7 +17,13 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Python Debugger: position monitor",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/position_monitor.py",
+            "console": "integratedTerminal"
         }
-
     ]
 }
