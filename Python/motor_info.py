@@ -66,7 +66,7 @@ class MotorInfo:
     motor_id: int
     motor_type: MotorType
     motor_index: Optional[DM_Motor_Type] = None
-    can_id: int
+    can_id: int =0
     master_id: Optional[int] = None
     
     # 控制参数

@@ -74,9 +74,11 @@ class USBHardwareWrapper:
         """
         return self.usb_hw.__exit__(exc_type, exc_val, exc_tb)
 
-    def fdcanFrameSend(self, data, id):
-        # print(f"Sending to [{hex(id)}]: {[hex(i) for i in data]} ")
-        return self.usb_hw.fdcanFrameSend(data, id)
+    def fdcanFrameSend(self, data, idx):
+        print(f"Sending to [{hex(idx)}]: {[hex(i) for i in data]} ")
+        # if idx >= 0xa0:
+        #     print(1)
+        return self.usb_hw.fdcanFrameSend(data, idx)
 
 
 # 简单包装函数，可以直接使用: usb_hw = wrapper(usb_hw)

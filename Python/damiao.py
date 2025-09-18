@@ -1,18 +1,17 @@
-try:
-    # When imported from within Python directory
-    from src import usb_class, can_value_type
-except ImportError:
-    # When imported from upper directory
-    from Python.src import usb_class, can_value_type
+import sys
+import os
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
+from src import usb_class, can_value_type
 from enum import IntEnum
 import time
 import struct
-import sys
-from typing import Optional
+from typing import Optional, List
 import threading
 import signal
 from dataclasses import dataclass
-from typing import List
 from motor_info import *
 @dataclass
 class DmActData:
@@ -196,7 +195,8 @@ class DmMotorManager:
     #       if self.getUSBHw().getDeviceHandle() is not None:
     #           self.disable_all()  # 使能该接口下的所有电机
     #           self.usb_hw.close()
-    def add_motor(self, )
+    def add_motor(self, motor_id):
+        pass
 
     def add_ht_motor(self, motor_id):
 
