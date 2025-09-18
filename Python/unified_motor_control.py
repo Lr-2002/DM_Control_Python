@@ -222,9 +222,11 @@ class ServoProtocol(MotorProtocol):
                 motor_info.master_id,
             )
         self.servo_manager.add_servo(
-            servo,
+            # servo,
+            motor_info.motor_id,
             motor_info.can_id,
-            motor_info.master_id
+            motor_info.master_id,
+            motor=servo
         )
         self.motor_mapping[motor_info.motor_id] = servo
         self.motors[motor_info.motor_id] = servo
@@ -274,10 +276,10 @@ class ServoProtocol(MotorProtocol):
 
         # 返回当前状态
         return MotorFeedback(
-            servo.get_position(),
-            servo.get_velocity(),
-            servo.get_torque(),
-            0,
+            position=servo.get_position(),
+            velocity=servo.get_velocity(),
+            torque=servo.get_torque(),
+            error_code=0,
             timestamp=time.time()
         )
     def set_zero_position(self, motor_id: int) -> bool:
@@ -329,7 +331,7 @@ class HTProtocol(MotorProtocol):
     def add_motor(self, motor_info: MotorInfo) -> bool:
         """添加HT电机"""
         
-        motor = self.ht_manager.add_motor(motor_info.can_id)
+        motor = self.ht_manager.add_motor(motor_info.motor_id)
         self.motors[motor_info.motor_id] = motor
         
 
@@ -537,23 +539,19 @@ class CANFrameDispatcher:
     def _unified_callback(self, frame: can_value_type):
         """统一的CAN帧回调函数"""
         can_id = frame.head.id
-        print(f"[RECV] from [{hex(frame.head.id)}]: {self.hexify(frame.data)}")
+        # print(f"[RECV] from [{hex(frame.head.id)}]: {self.hexify(frame.data)}")
         # 根据CAN ID范围分发到不同的协议处理器
-        try:
-            # 达妙电机: ID范围通常是 0x01-0x06, 0x11-0x16 等
-            if can_id <= 0x100:  # 达妙电机ID范围
-                if "damiao" in self.handlers:
-                    self.handlers["damiao"](frame)
-
-            # HT电机: ID范围通常是 0x700, 0x800 等
-            elif can_id >= 0x700:  # HT电机ID范围
-                if "ht" in self.handlers:
-                    self.handlers["ht"](frame)
-
-            # 其他协议可以在这里添加
-
-        except Exception as e:
-            print(f"Error in CAN frame dispatch: {e}")
+        # 达妙电机: ID范围通常是 0x01-0x06, 0x11-0x16 等
+        if can_id <= 0x16:  # 达妙电机ID范围
+            if "damiao" in self.handlers:
+                self.handlers["damiao"](frame)
+        elif can_id <=0x19:
+            if 'servo' in self.handlers:
+                self.handlers['servo'](frame)
+        # HT电机: ID范围通常是 0x700, 0x800 等
+        elif can_id >= 0x700:  # HT电机ID范围
+            if "ht" in self.handlers:
+                self.handlers["ht"](frame)
 
 
 class MotorManager:

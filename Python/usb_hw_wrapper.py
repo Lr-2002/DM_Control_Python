@@ -7,6 +7,7 @@ USB Hardware Wrapper
 
 from src import usb_class
 import signal 
+import time
 import sys 
 # Signal handler for Ctrl+C
 def signal_handler(signum, frame):
@@ -75,10 +76,12 @@ class USBHardwareWrapper:
         return self.usb_hw.__exit__(exc_type, exc_val, exc_tb)
 
     def fdcanFrameSend(self, data, idx):
-        print(f"Sending to [{hex(idx)}]: {[hex(i) for i in data]} ")
+        # print(f"Sending to [{hex(idx)}]: {[hex(i) for i in data]} ")
         # if idx >= 0xa0:
         #     print(1)
-        return self.usb_hw.fdcanFrameSend(data, idx)
+        xx = self.usb_hw.fdcanFrameSend(data, idx)
+        time.sleep(0.002)
+        return xx 
 
 
 # 简单包装函数，可以直接使用: usb_hw = wrapper(usb_hw)

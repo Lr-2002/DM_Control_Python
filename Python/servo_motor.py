@@ -43,9 +43,9 @@ class ServoMotor:
 		
 		# 舵机状态
 		self.enabled = False
-		self.position = None
-		self.velocity = None
-		self.torque = None
+		self.position = 0
+		self.velocity = 0
+		self.torque = 0
 		
 		# 舵机限制参数 (0-4095表示一圈)
 		self.max_position = 4095     # 最大位置
@@ -106,12 +106,12 @@ class ServoMotor:
 		cmd = [ServoControlMode.READ, 0, 0, 0, 0, 0, 0, 0]
 		
 		mark = self._send_command(cmd)
-		time.sleep(0.005)
+		# time.sleep(0.1)
 		return mark
 		
 	def get_position(self) -> int:
 		"""获取当前位置 (0-4095)"""
-		return self.position
+		return self.position / 4095 * 2 * 3.14
 		
 	def get_velocity(self) -> int:
 		"""获取当前速度 (0-4095)"""
@@ -149,26 +149,21 @@ class ServoMotor:
 		Args:
 			frame: CAN帧对象
 		"""
-		try:
-			if frame.head.id != self.rx_id or frame.head.dlc < 6:
-				return False
-				
-			# 解析反馈数据: [pos_high, pos_low, vel_high, vel_low, torque_high, torque_low, ...]
-			pos_int =frame.data[0] * 256 + frame.data[1] 
-			vel_int = frame.data[2] * 256 + frame.data[3]
-			torque_int = frame.data[4] * 256 + frame.data[5]
-			
-			# 直接使用原始值 (0-4095)
-			self.position = pos_int
-			self.velocity = vel_int
-			self.torque = torque_int
-			# print(' the data for ',self.can_id, self.position, self.velocity, self.torque)          
-			return True
-			
-		except Exception as e:
-			print(f"舵机 {self.motor_id} 处理反馈失败: {e}")
+		if frame.head.id != self.rx_id or frame.head.dlc < 6:
 			return False
-
+			
+		# 解析反馈数据: [pos_high, pos_low, vel_high, vel_low, torque_high, torque_low, ...]
+		pos_int =frame.data[0] * 256 + frame.data[1] 
+		vel_int = frame.data[2] * 256 + frame.data[3]
+		torque_int = frame.data[4] * 256 + frame.data[5]
+		
+		# 直接使用原始值 (0-4095)
+		self.position = pos_int
+		self.velocity = vel_int
+		self.torque = torque_int
+		# print(' the data for ',self.can_id, self.position, self.velocity, self.torque)          
+		return True
+			
 
 class ServoMotorManager:
 	"""
@@ -176,7 +171,7 @@ class ServoMotorManager:
 	参考HTMotorManager的实现结构
 	"""
 	
-	def __init__(self, usb_hw, as_sub_module=False):
+	def __init__(self, usb_hw, as_sub_module=True):
 		"""
 		初始化舵机管理器
 		
@@ -191,7 +186,7 @@ class ServoMotorManager:
 		if not as_sub_module:
 			self.usb_hw.setFrameCallback(self.can_frame_callback)
 			
-	def add_servo(self, motor_id: int, can_id: int, rx_id: int) -> ServoMotor:
+	def add_servo(self,  motor_id: int, can_id: int, rx_id: int, motor=None) -> ServoMotor:
 		"""
 		添加舵机
 		
@@ -203,7 +198,10 @@ class ServoMotorManager:
 		Returns:
 			ServoMotor: 创建的舵机对象
 		"""
-		servo = ServoMotor(self.usb_hw, motor_id, can_id, rx_id)
+		if motor:
+			servo=motor
+		else:
+			servo = ServoMotor(self.usb_hw, motor_id, can_id, rx_id)
 		self.servos[motor_id] = servo
 		return servo
 		
