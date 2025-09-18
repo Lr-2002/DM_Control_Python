@@ -13,37 +13,7 @@ import threading
 import signal
 from dataclasses import dataclass
 from typing import List
-class DM_Motor_Type(IntEnum):
-    DM3507 = 0
-    DM4310 = 1
-    DM4310_48V = 2
-    DM4340 = 3
-    DM4340_48V = 4
-    DM6006 = 5
-    DM6248 = 6
-    DM8006 = 7
-    DM8009 = 8
-    DM10010L = 9
-    DM10010 = 10
-    DMH3510 = 11
-    DMH6215 = 12
-    DMS3519 = 13
-    DMG6220 = 14
-    Num_Of_Motor = 15
-    HT4438 = 16
-
-class Control_Mode(IntEnum):
-    MIT_MODE = 0x000
-    POS_VEL_MODE = 0x100
-    VEL_MODE = 0x200
-    POS_FORCE_MODE = 0x300
-
-class Control_Mode_Code(IntEnum):
-    MIT = 1
-    POS_VEL = 2
-    VEL = 3
-    POS_FORCE = 4
-
+from motor_info import *
 @dataclass
 class DmActData:
     motorType: DM_Motor_Type  # 是哪款电机
@@ -99,24 +69,6 @@ class DM_REG(IntEnum):
     dir = 55
     p_m = 80
     xout = 81
-
-limit_param = [
-    [12.566, 50, 5],   # DM3507         check 
-    [12.5, 30, 10],   # DM4310          check
-    [12.5, 50, 10],   # DM4310_48V
-    [12.5, 10, 28],   # DM4340          check
-    [12.5, 20, 28],   # DM4340_48V      check
-    [12.5, 45, 12],   # DM6006          check
-    [12.566, 20, 120],   # DM6248       check
-    [12.5, 45, 20],   # DM8006          check
-    [12.5, 45, 54],   # DM8009          check
-    [12.5, 25, 200],  # DM10010L        check
-    [12.5, 20, 200],  # DM10010         check
-    [12.5, 280, 1],   # DMH3510         check
-    [12.5, 45, 10],   # DMH6215
-    [12.5, 2000, 2],    # DMS3519         check
-    [12.5, 45, 10]    # DMG6220         check
-]
 
 class ValueUnion:
     def __init__(self):
@@ -214,7 +166,7 @@ class Motor:
     def set_mode(self, value: Control_Mode):
         self.mode = value
 
-class Motor_Control:
+class DmMotorManager:
     def __init__(self,usb_hw=None, nom_baud: int=0, dat_baud: int=5000000, sn: str ='null', data_ptr: list=[], use_ht=False):
         assert usb_hw or (nom_baud != 0), 'the usb or nom should be one right '
         self.data_ptr_ = data_ptr
@@ -223,9 +175,9 @@ class Motor_Control:
         self.read_write_save.clear()
         
         # 遍历该bus下所有电机
-        for act_data in self.data_ptr_:
-            motor = Motor(act_data.motorType, act_data.mode, act_data.can_id, act_data.mst_id)
-            self.addMotor(motor)
+        # for act_data in self.data_ptr_:
+        #     motor = Motor(act_data.motorType, act_data.mode, act_data.can_id, act_data.mst_id)
+        #     self.addMotor(motor)
         if usb_hw:
             self.usb_hw = usb_hw
         else: 
@@ -244,6 +196,8 @@ class Motor_Control:
     #       if self.getUSBHw().getDeviceHandle() is not None:
     #           self.disable_all()  # 使能该接口下的所有电机
     #           self.usb_hw.close()
+    def add_motor(self, )
+
     def add_ht_motor(self, motor_id):
 
         assert hasattr(self, 'ht_manager'), "You should import ht motor first "

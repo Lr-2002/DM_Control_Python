@@ -11,59 +11,11 @@ import time
 import numpy as np
 from dataclasses import dataclass, field
 import struct
-
-# 导入必要的模块
-try:
-    # 当从Python目录内部导入时
-    from damiao import Control_Mode_Code
-    from src import can_value_type
-except ImportError:
-    # 当从上层目录导入时
-    from Python.damiao import Control_Mode_Code
-    from Python.src import can_value_type
-
-
-class MotorType(IntEnum):
-    """电机类型枚举"""
-    DAMIAO = 1
-    HIGH_TORQUE = 2
-    SERVO = 3
-
-
-@dataclass
-class MotorInfo:
-    """电机信息配置"""
-    motor_id: int
-    motor_type: MotorType
-    can_id: int
-    master_id: Optional[int] = None
-    name: str = ""
-    
-    # 控制参数
-    kp: float = 0.0
-    kd: float = 0.0
-    torque_offset: float = 0.0
-    
-    # 限制参数 [position_limit, velocity_limit, torque_limit]
-    limits: List[float] = None
-    
-    def __post_init__(self):
-        if self.limits is None:
-            self.limits = [12.5, 50.0, 10.0]  # 默认限制
-        if not self.name:
-            self.name = f"motor_{self.motor_id}"
-
-
-@dataclass
-class MotorFeedback:
-    """电机反馈数据"""
-    position: float = 0.0      # 位置 (rad)
-    velocity: float = 0.0      # 速度 (rad/s)
-    torque: float = 0.0        # 力矩 (N·m)
-    error_code: int = 0        # 错误代码
-    timestamp: float = 0.0     # 时间戳
-
-
+from Python.src import can_value_type
+from motor_info import *
+from damiao import Motor as DM_Motor
+from ht_motor import HTMotor as HT_motor
+from servo_motor import ServoMotor as Servo_Motor
 class MotorProtocol(ABC):
     """电机通信协议抽象基类"""
     
@@ -72,7 +24,7 @@ class MotorProtocol(ABC):
         self.motors = {}  # motor_id -> motor_instance
         
     @abstractmethod
-    def add_motor(self, motor_id: int, **config) -> bool:
+    def add_motor(self, motor_info:MotorInfo) -> bool:
         """添加电机到协议中"""
         pass
     
@@ -121,23 +73,10 @@ class DamiaoProtocol(MotorProtocol):
         self.motor_control = motor_control_instance  # 现有的Motor_Control实例
         self.pending_commands = {}  # motor_id -> command
         
-    def add_motor(self, motor_id: int, **config) -> bool:
+    def add_motor(self, motor_info:MotorInfo) -> bool:
         """添加达妙电机"""
-        try:
-            can_id = config['can_id']
-            # 从现有的Motor_Control中获取电机实例
-            dm_motor = self.motor_control.getMotor(can_id)
-            if dm_motor:
-                self.motors[motor_id] = dm_motor
-                print(f"Damiao motor {motor_id} (CAN ID: {can_id}) added successfully")
-                return True
-            else:
-                print(f"Failed to find Damiao motor with CAN ID {can_id}")
-                return False
-        except Exception as e:
-            print(f"Failed to add Damiao motor {motor_id}: {e}")
-            return False
-    
+        self.motor_control.addMotor(DM_Motor(motor_info.motor_index, Control_Mode.MIT_MODE, motor_info.can_id, motor_info.master_id))
+        return True  
     def enable_motor(self, motor_id: int) -> bool:
         """达妙电机使能"""
         if motor_id not in self.motors:
@@ -258,29 +197,14 @@ class ServoProtocol(MotorProtocol):
         # 电机ID映射 (上层ID -> 底层ServoMotor对象)
         self.motor_mapping = {}
         
-    def add_motor(self, motor_id: int, can_id: int, rx_id: int, name: str = "servo") -> bool:
+    def add_motor(self, motor_info:MotorInfo) -> bool:
         """添加伺服电机"""
-        try:
-            # 在底层管理器中添加舵机
-            servo = self.servo_manager.add_servo(motor_id, can_id, rx_id)
+        self.servo_manager.add_servo(Servo_Motor(self.usb_hw,motor_info.motor_id,  motor_info.can_id, motor_info.master_id))
+        self.motor_mapping[motor_id] = servo
             
-            # 在上层记录电机信息
-            self.motors[motor_id] = {
-                'can_id': can_id,
-                'rx_id': rx_id,
-                'name': name,
-                'type': MotorType.SERVO
-            }
+        return True
             
-            # 建立映射关系
-            self.motor_mapping[motor_id] = servo
-            
-            return True
-            
-        except Exception as e:
-            print(f"添加舵机失败: {e}")
-            return False
-        
+       
     def enable_motor(self, motor_id: int) -> bool:
         """使能电机"""
         if motor_id not in self.motor_mapping:
@@ -367,24 +291,10 @@ class HTProtocol(MotorProtocol):
         self.ht_manager = ht_manager_instance  # 现有的HTMotorManager实例
         self.pending_commands = {}  # motor_id -> (pos, vel, kp, kd, tau)
         
-    def add_motor(self, motor_id: int, **config) -> bool:
+    def add_motor(self, motor_info:MotorInfo) -> bool:
         """添加HT电机"""
-        try:
-            ht_motor_id = config['ht_motor_id']
-            # 通过HTMotorManager添加电机
-            self.ht_manager.add_motor(ht_motor_id)
-            ht_motor = self.ht_manager.get_motor(ht_motor_id)
-            if ht_motor:
-                self.motors[motor_id] = ht_motor
-                print(f"HT motor {motor_id} (HT ID: {ht_motor_id}) added successfully")
-                return True
-            else:
-                print(f"Failed to find HT motor with ID {ht_motor_id}")
-                return False
-        except Exception as e:
-            print(f"Failed to add HT motor {motor_id}: {e}")
-            return False
-    
+        self.ht_manager.add_motor(motor_info.can_id)
+         
     def enable_motor(self, motor_id: int) -> bool:
         """HT电机使能（HT电机不支持单独enable，通过控制命令激活）"""
         if motor_id not in self.motors:
