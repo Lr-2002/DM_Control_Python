@@ -37,9 +37,9 @@ class ServoMotor:
 		
 		# 舵机状态
 		self.enabled = False
-		self.position = 0
-		self.velocity = 0
-		self.torque = 0
+		self.position = None
+		self.velocity = None
+		self.torque = None
 		
 		# 舵机限制参数 (0-4095表示一圈)
 		self.max_position = 4095     # 最大位置
@@ -266,6 +266,8 @@ class ServoMotorManager:
 		self.read_all_status()
 		for motor_id, servo in self.servos.items():
 			positions[motor_id] = servo.get_position()
+		if None in positions.values():
+			return None
 		return positions
 		
 	def get_all_velocities(self) -> Dict[int, float]:
@@ -355,7 +357,7 @@ if __name__ =='__main__':
 	servo1 = servo_manager.add_servo(1, 0x09, 0x19)
 	print(f"   添加舵机1: ID=1, CAN=0x09, RX=0x19")
 	
-	servo_manager.disable_all()
+	# servo_manager.disable_all()
 	while True:
 		pos= servo_manager.get_all_positions()
 		print(pos)
