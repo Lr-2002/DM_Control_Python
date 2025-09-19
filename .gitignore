@@ -1,2 +1,5 @@
 dynamic_infos
 dynamics_data*
+__pycache__
+ic_arm/urdf
+control/urdfly/identification_results
