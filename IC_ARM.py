@@ -36,7 +36,7 @@ def safe_call(func, *args, **kwargs) -> Tuple[Any, Optional[str]]:
     """安全函数调用，返回(结果, 错误信息)"""
     try:
         result = func(*args, **kwargs)
-        time.sleep(0.0002)
+        # time.sleep(0.0002)
         return result, None
     except Exception as e:
         error_msg = f"{func.__name__}() 失败: {str(e)}"
