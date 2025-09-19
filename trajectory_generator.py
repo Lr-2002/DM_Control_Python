@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
-动力学辨识轨迹生成器
+动力学辨识轨迹生成器 (安全增强版)
 为IC ARM生成用于动力学参数辨识的激励轨迹
+包含关节限制、速度约束和碰撞检测
 """
 
 from ssl import ALERT_DESCRIPTION_DECOMPRESSION_FAILURE
@@ -9,18 +10,448 @@ import numpy as np
 import matplotlib.pyplot as plt
 import json
 import time
+import xml.etree.ElementTree as ET
 from typing import List, Tuple, Dict
+import os
 
 class TrajectoryGenerator:
-	def __init__(self, num_motors=5):
+	def __init__(self, urdf_path=None, max_velocity=3.0, joint_limit_buffer=0.2, num_motors=None):
 		"""
 		初始化轨迹生成器
 		
 		Args:
-			num_motors: 电机数量
+			urdf_path: URDF文件路径，用于读取关节限制和自动检测关节数量
+			max_velocity: 最大速度限制 (rad/s)
+			joint_limit_buffer: 关节限制缓冲区比例 (0-1)
+			num_motors: 手动指定电机数量（可选，优先使用URDF自动检测）
 		"""
-		self.num_motors = num_motors
-		self.motor_names = [f"m{i+1}" for i in range(num_motors)]
+		self.max_velocity = max_velocity
+		self.joint_limit_buffer = joint_limit_buffer
+		self.joint_limits = {}
+		
+		# 从URDF加载关节限制并自动检测关节数量
+		if urdf_path and os.path.exists(urdf_path):
+			detected_joints = self._load_joint_limits_from_urdf(urdf_path)
+			self.num_motors = len(detected_joints) if detected_joints else (num_motors or 5)
+		else:
+			self.num_motors = num_motors or 5
+			print(f"⚠ 未提供URDF文件，使用默认电机数量: {self.num_motors}")
+		
+		print(f"轨迹生成器初始化完成:")
+		print(f"  电机数量: {self.num_motors}")
+		print(f"  最大速度: {self.max_velocity} rad/s")
+		print(f"  关节限制缓冲区: {self.joint_limit_buffer*100:.1f}%")
+		
+		# 打印关节限制信息
+		self._print_joint_limits()
+	
+	def _load_joint_limits_from_urdf(self, urdf_path):
+		"""从URDF文件读取关节限制并返回检测到的revolute关节列表"""
+		try:
+			tree = ET.parse(urdf_path)
+			root = tree.getroot()
+			
+			detected_joints = []
+			
+			for joint in root.findall('.//joint'):
+				joint_name = joint.get('name')
+				joint_type = joint.get('type')
+				
+				if joint_type == 'revolute':
+					limit_elem = joint.find('limit')
+					if limit_elem is not None:
+						lower = float(limit_elem.get('lower', '-3.14'))
+						upper = float(limit_elem.get('upper', '3.14'))
+						velocity = float(limit_elem.get('velocity', '3.14'))
+						
+						# 映射joint名称到motor索引
+						if joint_name.startswith('joint'):
+							joint_num = int(joint_name.replace('joint', ''))
+							detected_joints.append(joint_num)
+							
+							# 存储关节限制（使用0-based索引）
+							self.joint_limits[joint_num-1] = {
+								'lower': lower,
+								'upper': upper,
+								'velocity': min(velocity, self.max_velocity),
+								'range': upper - lower,
+								'name': joint_name
+							}
+			
+			detected_joints.sort()  # 确保顺序
+			print(f"✓ 从URDF检测到 {len(detected_joints)} 个revolute关节: {detected_joints}")
+			print(f"✓ 加载了 {len(self.joint_limits)} 个关节限制")
+			
+			return detected_joints
+			
+		except Exception as e:
+			print(f"✗ 读取URDF失败: {e}")
+			self._set_default_joint_limits()
+			return None
+	
+	def _set_default_joint_limits(self):
+		"""设置默认关节限制"""
+		default_limits = [
+			{'lower': -1.23, 'upper': 0.17, 'velocity': 3.0},  # joint1
+			{'lower': -0.18, 'upper': 3.47, 'velocity': 3.0},  # joint2  
+			{'lower': -0.65, 'upper': 3.49, 'velocity': 3.0},  # joint3
+			{'lower': -3.46, 'upper': 1.97, 'velocity': 3.0},  # joint4
+			{'lower': -1.69, 'upper': 1.80, 'velocity': 3.0},  # joint5
+		]
+		
+		for i, limits in enumerate(default_limits):
+			if i < self.num_motors:
+				self.joint_limits[i] = {
+					'lower': limits['lower'],
+					'upper': limits['upper'], 
+					'velocity': min(limits['velocity'], self.max_velocity),
+					'range': limits['upper'] - limits['lower']
+				}
+		
+		print(f"✓ 使用默认关节限制")
+	
+	def _print_joint_limits(self):
+		"""打印关节限制信息"""
+		print(f"\n=== 关节限制信息 ===")
+		print(f"{'关节':<8} {'下限(rad)':<12} {'上限(rad)':<12} {'范围(rad)':<12} {'最大速度(rad/s)':<15}")
+		print("-" * 70)
+		
+		for i in range(self.num_motors):
+			if i in self.joint_limits:
+				limits = self.joint_limits[i]
+				print(f"joint{i+1:<3} {limits['lower']:<12.3f} {limits['upper']:<12.3f} "
+					  f"{limits['range']:<12.3f} {limits['velocity']:<15.3f}")
+			else:
+				print(f"joint{i+1:<3} {'未定义':<12} {'未定义':<12} {'未定义':<12} {'未定义':<15}")
+	
+	def _apply_velocity_ramping(self, position, velocity, joint_idx):
+		"""
+		在关节限制边界附近应用速度渐变
+		
+		Args:
+			position: 位置数组
+			velocity: 速度数组  
+			joint_idx: 关节索引 (0-based)
+			
+		Returns:
+			调整后的速度数组
+		"""
+		if joint_idx not in self.joint_limits:
+			return velocity
+		
+		limits = self.joint_limits[joint_idx]
+		lower_limit = limits['lower']
+		upper_limit = limits['upper']
+		joint_range = limits['range']
+		
+		# 计算渐变区域
+		ramp_zone = joint_range * self.joint_limit_buffer
+		lower_ramp_start = lower_limit + ramp_zone
+		upper_ramp_start = upper_limit - ramp_zone
+		
+		ramped_velocity = velocity.copy()
+		
+		for i, pos in enumerate(position):
+			ramp_factor = 1.0
+			
+			# 接近下限时减速
+			if pos < lower_ramp_start:
+				if pos <= lower_limit:
+					ramp_factor = 0.1  # 最小速度
+				else:
+					# 线性渐变
+					ramp_factor = 0.1 + 0.9 * (pos - lower_limit) / ramp_zone
+			
+			# 接近上限时减速  
+			elif pos > upper_ramp_start:
+				if pos >= upper_limit:
+					ramp_factor = 0.1  # 最小速度
+				else:
+					# 线性渐变
+					ramp_factor = 0.1 + 0.9 * (upper_limit - pos) / ramp_zone
+			
+			ramped_velocity[i] *= ramp_factor
+		
+		return ramped_velocity
+	
+	def _constrain_to_joint_limits(self, position, joint_idx):
+		"""
+		将位置约束到关节限制范围内
+		
+		Args:
+			position: 位置数组
+			joint_idx: 关节索引 (0-based)
+			
+		Returns:
+			约束后的位置数组
+		"""
+		if joint_idx not in self.joint_limits:
+			return position
+		
+		limits = self.joint_limits[joint_idx]
+		lower_limit = limits['lower']
+		upper_limit = limits['upper']
+		
+		# 应用缓冲区
+		buffer_size = limits['range'] * self.joint_limit_buffer
+		safe_lower = lower_limit + buffer_size
+		safe_upper = upper_limit - buffer_size
+		
+		return np.clip(position, safe_lower, safe_upper)
+	
+	def _limit_velocity(self, velocity, joint_idx):
+		"""
+		限制关节速度
+		
+		Args:
+			velocity: 速度数组
+			joint_idx: 关节索引 (0-based)
+			
+		Returns:
+			限制后的速度数组
+		"""
+		if joint_idx not in self.joint_limits:
+			max_vel = self.max_velocity
+		else:
+			max_vel = self.joint_limits[joint_idx]['velocity']
+		
+		return np.clip(velocity, -max_vel, max_vel)
+	
+	def create_mujoco_scene_with_obstacle(self, urdf_path):
+		"""
+		创建包含50mm圆柱体障碍物的MuJoCo场景XML
+		
+		Args:
+			urdf_path: 机器人URDF文件路径
+			
+		Returns:
+			MuJoCo XML场景字符串
+		"""
+		xml_content = f'''
+<mujoco model="robot_with_obstacle">
+	<compiler angle="radian" meshdir="meshes/"/>
+	
+	<option timestep="0.002" iterations="50" solver="Newton" jacobian="dense"/>
+	
+	<worldbody>
+		<!-- 地面 -->
+		<geom name="floor" pos="0 0 -0.1" size="2 2 0.05" type="box" rgba="0.8 0.8 0.8 1"/>
+		
+		<!-- 50mm直径圆柱体障碍物 (从base往下-y方向) -->
+		<body name="obstacle" pos="0 -0.15 0">
+			<geom name="cylinder_obstacle" 
+				  type="cylinder" 
+				  size="0.025 0.5" 
+				  rgba="1 0 0 0.7"
+				  pos="0 0 0"/>
+		</body>
+		
+		<!-- 机器人 -->
+		<body name="robot_base" pos="0 0 0">
+			<include file="{urdf_path}"/>
+		</body>
+	</worldbody>
+	
+	<contact>
+		<exclude body1="robot_base" body2="obstacle"/>
+	</contact>
+</mujoco>
+'''
+		return xml_content
+	
+	def validate_trajectory_safety(self, trajectory, check_collisions=True):
+		"""
+		验证轨迹安全性
+		
+		Args:
+			trajectory: 轨迹字典
+			check_collisions: 是否检查碰撞
+			
+		Returns:
+			验证结果字典
+		"""
+		validation_results = {
+			'is_safe': True,
+			'violations': [],
+			'warnings': [],
+			'statistics': {}
+		}
+		
+		positions = trajectory['positions']
+		velocities = trajectory['velocities']
+		accelerations = trajectory['accelerations']
+		
+		# 1. 检查关节限制
+		num_trajectory_motors = positions.shape[1]
+		for motor_idx in range(min(self.num_motors, num_trajectory_motors)):
+			if motor_idx in self.joint_limits:
+				limits = self.joint_limits[motor_idx]
+				motor_positions = positions[:, motor_idx]
+				motor_velocities = velocities[:, motor_idx]
+				
+				# 位置限制检查
+				pos_violations = np.where((motor_positions < limits['lower']) | 
+										(motor_positions > limits['upper']))[0]
+				if len(pos_violations) > 0:
+					validation_results['is_safe'] = False
+					validation_results['violations'].append({
+						'type': 'position_limit',
+						'motor': motor_idx + 1,
+						'count': len(pos_violations),
+						'first_violation_time': trajectory['time'][pos_violations[0]]
+					})
+				
+				# 速度限制检查
+				max_vel = limits['velocity']
+				vel_violations = np.where(np.abs(motor_velocities) > max_vel)[0]
+				if len(vel_violations) > 0:
+					validation_results['is_safe'] = False
+					validation_results['violations'].append({
+						'type': 'velocity_limit',
+						'motor': motor_idx + 1,
+						'count': len(vel_violations),
+						'max_velocity': np.max(np.abs(motor_velocities)),
+						'limit': max_vel
+					})
+				
+				# 统计信息
+				motor_accelerations = accelerations[:, motor_idx] if motor_idx < accelerations.shape[1] else np.zeros_like(motor_positions)
+				validation_results['statistics'][f'motor_{motor_idx+1}'] = {
+					'pos_range': [np.min(motor_positions), np.max(motor_positions)],
+					'vel_range': [np.min(motor_velocities), np.max(motor_velocities)],
+					'max_abs_vel': np.max(np.abs(motor_velocities)),
+					'max_abs_acc': np.max(np.abs(motor_accelerations))
+				}
+		
+		# 2. 碰撞检查 (如果启用)
+		if check_collisions:
+			collision_count = self._check_trajectory_collisions(trajectory)
+			if collision_count > 0:
+				validation_results['is_safe'] = False
+				validation_results['violations'].append({
+					'type': 'collision',
+					'count': collision_count
+				})
+		
+		return validation_results
+	
+	def _generate_motor_configs_from_urdf(self):
+		"""
+		从URDF文件自动生成电机配置
+		
+		Returns:
+			dict: 电机配置字典
+		"""
+		motor_configs = {}
+		
+		for joint_id in range(1, self.num_motors + 1):
+			joint_name = f"joint{joint_id}"
+			if joint_name in self.joint_limits:
+				limits = self.joint_limits[joint_name]
+				min_angle_deg = np.degrees(limits['lower'])
+				max_angle_deg = np.degrees(limits['upper'])
+				
+				# 计算安全范围 (应用缓冲区)
+				range_deg = max_angle_deg - min_angle_deg
+				buffer_deg = range_deg * self.joint_limit_buffer
+				safe_min = min_angle_deg + buffer_deg
+				safe_max = max_angle_deg - buffer_deg
+				
+				# 根据关节范围选择配置方式
+				if range_deg < 90:  # 小范围关节使用min/max配置
+					motor_configs[joint_id] = {
+						"min_angle": safe_min,
+						"max_angle": safe_max
+					}
+				else:  # 大范围关节使用对称幅度配置
+					center_deg = (safe_min + safe_max) / 2
+					amplitude_deg = min(abs(safe_max - center_deg), abs(center_deg - safe_min))
+					motor_configs[joint_id] = {
+						"amplitude": amplitude_deg
+					}
+			else:
+				# 默认配置
+				motor_configs[joint_id] = {"amplitude": 30.0}
+		
+		print(f"\n=== 从URDF自动生成的电机配置 ===")
+		for motor_id, config in motor_configs.items():
+			if "min_angle" in config:
+				print(f"电机{motor_id}: 范围 [{config['min_angle']:.1f}°, {config['max_angle']:.1f}°]")
+			else:
+				print(f"电机{motor_id}: 对称幅度 ±{config['amplitude']:.1f}°")
+		print()
+		
+		return motor_configs
+	
+	def _check_trajectory_collisions(self, trajectory):
+		"""
+		使用简化的几何检查来检测与圆柱体障碍物的碰撞
+		
+		Args:
+			trajectory: 轨迹字典
+			
+		Returns:
+			碰撞次数
+		"""
+		# 简化的碰撞检查 - 基于关节角度的几何估算
+		# 这里使用简化模型，实际应用中需要完整的运动学计算
+		
+		positions = trajectory['positions']
+		collision_count = 0
+		
+		# 障碍物位置: (0, -0.15, 0), 半径: 0.025m
+		obstacle_pos = np.array([0, -0.15, 0])
+		obstacle_radius = 0.025
+		
+		# 简化检查：如果关节2角度过大，可能导致link2接近障碍物
+		joint2_positions = positions[:, 1]  # joint2 (motor2)
+		
+		# 当joint2角度 > 2.0 rad时，可能有碰撞风险
+		risky_positions = np.where(joint2_positions > 2.0)[0]
+		collision_count = len(risky_positions)
+		
+		return collision_count
+	
+	def apply_safety_constraints_to_trajectory(self, trajectory):
+		"""
+		对现有轨迹应用安全约束
+		
+		Args:
+			trajectory: 输入轨迹字典
+			
+		Returns:
+			安全约束后的轨迹字典
+		"""
+		safe_trajectory = trajectory.copy()
+		positions = trajectory['positions'].copy()
+		velocities = trajectory['velocities'].copy()
+		
+		# 对每个关节应用约束
+		for motor_idx in range(self.num_motors):
+			# 1. 约束位置
+			positions[:, motor_idx] = self._constrain_to_joint_limits(
+				positions[:, motor_idx], motor_idx)
+			
+			# 2. 限制速度
+			velocities[:, motor_idx] = self._limit_velocity(
+				velocities[:, motor_idx], motor_idx)
+			
+			# 3. 应用速度渐变
+			velocities[:, motor_idx] = self._apply_velocity_ramping(
+				positions[:, motor_idx], velocities[:, motor_idx], motor_idx)
+		
+		# 4. 重新计算加速度
+		dt = trajectory['time'][1] - trajectory['time'][0]
+		accelerations = np.zeros_like(velocities)
+		for motor_idx in range(self.num_motors):
+			accelerations[:, motor_idx] = np.gradient(velocities[:, motor_idx], dt)
+		
+		safe_trajectory['positions'] = positions
+		safe_trajectory['velocities'] = velocities
+		safe_trajectory['accelerations'] = accelerations
+		safe_trajectory['safety_applied'] = True
+		
+		return safe_trajectory
 		
 	def generate_single_motor_trajectory(self, motor_id: int, amplitude: float = 90.0, 
 									   duration: float = 10.0, num_cycles: int = 2,
@@ -148,13 +579,28 @@ class TrajectoryGenerator:
 					envelope * oscillation_ddot
 				)
 		
+		# 应用安全约束
+		motor_idx = motor_id - 1  # 转换为0-based索引
+		
+		# 1. 约束位置到关节限制范围内
+		position = self._constrain_to_joint_limits(position, motor_idx)
+		
+		# 2. 限制速度
+		velocity = self._limit_velocity(velocity, motor_idx)
+		
+		# 3. 在关节限制边界附近应用速度渐变
+		velocity = self._apply_velocity_ramping(position, velocity, motor_idx)
+		
+		# 4. 重新计算加速度（基于调整后的速度）
+		dt_val = t[1] - t[0]
+		acceleration = np.gradient(velocity, dt_val)
+		
 		# 创建所有电机的位置数组
 		all_positions = np.zeros((len(t), self.num_motors))
 		all_velocities = np.zeros((len(t), self.num_motors))
 		all_accelerations = np.zeros((len(t), self.num_motors))
 		
 		# 只有指定电机运动，其他保持零位
-		motor_idx = motor_id - 1  # 转换为0-based索引
 		all_positions[:, motor_idx] = position
 		all_velocities[:, motor_idx] = velocity
 		all_accelerations[:, motor_idx] = acceleration
@@ -431,8 +877,8 @@ class TrajectoryGenerator:
 		all_velocities = np.zeros((len(t), self.num_motors))
 		all_accelerations = np.zeros((len(t), self.num_motors))
 		
-		# 相位偏移 (每个电机相差72度 = 2π/5)
-		phase_shifts = [i * 2 * np.pi / 5 for i in range(5)]
+		# 相位偏移 (根据实际电机数量动态计算)
+		phase_shifts = [i * 2 * np.pi / self.num_motors for i in range(self.num_motors)]
 		
 		omega = 2 * np.pi * base_freq
 		
@@ -509,13 +955,19 @@ class TrajectoryGenerator:
 		all_accelerations = np.zeros((len(t), self.num_motors))
 		
 		# 每个电机使用不同的谐波组合
-		harmonic_configs = [
-			[1, 3, 5],      # 电机1: 基频 + 3次 + 5次谐波
-			[1, 2, 4],      # 电机2: 基频 + 2次 + 4次谐波
-			[1, 3, 7],      # 电机3: 基频 + 3次 + 7次谐波
-			[1, 2, 5],      # 电机4: 基频 + 2次 + 5次谐波
-			[1, 4, 6]       # 电机5: 基频 + 4次 + 6次谐波
+		# 动态生成谐波配置，支持任意数量的电机
+		harmonic_configs = []
+		base_harmonics = [
+			[1, 3, 5],      # 基频 + 3次 + 5次谐波
+			[1, 2, 4],      # 基频 + 2次 + 4次谐波
+			[1, 3, 7],      # 基频 + 3次 + 7次谐波
+			[1, 2, 5],      # 基频 + 2次 + 5次谐波
+			[1, 4, 6],      # 基频 + 4次 + 6次谐波
+			[1, 2, 6]       # 基频 + 2次 + 6次谐波 (第6个电机)
 		]
+		
+		for i in range(self.num_motors):
+			harmonic_configs.append(base_harmonics[i % len(base_harmonics)])
 		
 		for motor_idx in range(self.num_motors):
 			motor_id = motor_idx + 1
@@ -534,13 +986,17 @@ class TrajectoryGenerator:
 				
 				for freq in freq_set:
 					omega = 2 * np.pi * fundamental_freq * freq
-					pos_component = center_rad + amplitude_rad * np.sin(omega * t) / len(freq_set)
+					# 修正：每个谐波分量应该围绕中心振荡，而不是叠加中心
+					pos_component = amplitude_rad * np.sin(omega * t) / len(freq_set)
 					vel_component = amplitude_rad * omega * np.cos(omega * t) / len(freq_set)
 					acc_component = -amplitude_rad * omega**2 * np.sin(omega * t) / len(freq_set)
 					
 					position += pos_component
 					velocity += vel_component
 					acceleration += acc_component
+				
+				# 在所有谐波叠加后再加上中心偏移
+				position += center_rad
 					
 			elif "amplitude" in config:
 				# 电机3-5: 使用对称幅度
@@ -604,14 +1060,19 @@ class TrajectoryGenerator:
 		all_velocities = np.zeros((len(t), self.num_motors))
 		all_accelerations = np.zeros((len(t), self.num_motors))
 		
-		# 为每个电机分配不同的频率组合
-		frequencies = [
+		# 为每个电机分配不同的频率组合 - 动态支持任意数量电机
+		base_frequencies = [
 			[0.05, 0.15],  # m1: 低频 + 中频
 			[0.08, 0.12],  # m2: 
 			[0.06, 0.18],  # m3:
 			[0.10, 0.20],  # m4:
-			[0.04, 0.16]   # m5: 
+			[0.04, 0.16],  # m5: 
+			[0.07, 0.14]   # m6: 新增第6个电机
 		]
+		
+		frequencies = []
+		for i in range(self.num_motors):
+			frequencies.append(base_frequencies[i % len(base_frequencies)])
 		
 		for motor_idx in range(self.num_motors):
 			motor_id = motor_idx + 1
@@ -830,7 +1291,7 @@ class TrajectoryGenerator:
 			if np.max(np.abs(positions[:, i])) > 1e-6:
 				active_motors.append(i)
 		
-		colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
+		colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'pink', 'gray', 'brown', 'pink', 'gray']
 		
 		# 位置图
 		for i in active_motors:
@@ -1012,22 +1473,19 @@ class TrajectoryGenerator:
 		print(f"  终止速度: {np.degrees(velocity[-1]):.6f}°/s")
 
 def main():
-	"""主函数 - 生成各种测试轨迹"""
-	print("=== IC ARM 动力学辨识轨迹生成器 (增强版) ===\n")
+	"""主函数 - 生成各种类型的轨迹"""
+	print("=== IC ARM 动力学辨识轨迹生成器 (安全增强版) ===\n")
 	
-	generator = TrajectoryGenerator()
+	# 初始化轨迹生成器 - 使用URDF文件
+	urdf_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/robot_8dof/urdf/robot_8dof_updated.urdf"
+	generator = TrajectoryGenerator(urdf_path=urdf_path)
 	
-	# 1. 生成单个电机轨迹 (包括1号电机)
+	# 从URDF自动生成电机配置
+	motor_configs = generator._generate_motor_configs_from_urdf()
+	
+	# 1. 生成单个电机轨迹
 	print("1. 生成单个电机轨迹...")
-	motor_configs = {
-		1: {"min_angle": -30.0, "max_angle": 4.0},  # 1号电机: -30° 到 -4°
-		2: {"min_angle": -120.0, "max_angle": 30.0},  # 2号电机: -100° 到 +30°
-		3: {"amplitude": 100.0},  # 3号电机: 对称±90°
-		4: {"amplitude": 100.0},  # 4号电机: 对称±90°
-		5: {"amplitude": 100.0}   # 5号电机: 对称±90°
-	}
-	
-	for motor_id in [1, 2, 3, 4, 5]:
+	for motor_id in range(1, generator.num_motors + 1):
 		print(f"   生成电机 {motor_id} 的轨迹...")
 		config = motor_configs[motor_id]
 		
@@ -1050,8 +1508,21 @@ def main():
 			)
 		
 		# 保存轨迹
-		filename = f"trajectory_motor_{motor_id}_single.json"
+		filename = f"trajectory_motor_{motor_id}_single_safe.json"
 		generator.save_trajectory(single_traj, filename)
+		
+		# 验证轨迹安全性
+		validation = generator.validate_trajectory_safety(single_traj)
+		print(f"   电机 {motor_id} 安全验证: {'✓ 安全' if validation['is_safe'] else '✗ 有风险'}")
+		if not validation['is_safe']:
+			for violation in validation['violations']:
+				print(f"     - {violation['type']}: {violation}")
+		
+		# 打印统计信息
+		if f'motor_{motor_id}' in validation['statistics']:
+			stats = validation['statistics'][f'motor_{motor_id}']
+			print(f"     最大速度: {stats['max_abs_vel']:.3f} rad/s")
+			print(f"     位置范围: [{np.degrees(stats['pos_range'][0]):.1f}°, {np.degrees(stats['pos_range'][1]):.1f}°]")
 	
 	# 2. 生成新的非同频轨迹类型
 	print("\n2. 生成扫频轨迹...")
@@ -1124,11 +1595,12 @@ def main():
 	# 9. 生成原有的序列和同时轨迹
 	print("\n9. 生成序列轨迹...")
 	trajectory_files = [
-		"trajectory_motor_1_single.json",
-		"trajectory_motor_5_single.json", 
-		"trajectory_motor_4_single.json",
-		"trajectory_motor_3_single.json",
-		"trajectory_motor_2_single.json"
+		"trajectory_motor_1_single_safe.json",
+		"trajectory_motor_6_single_safe.json", 
+		"trajectory_motor_5_single_safe.json",
+		"trajectory_motor_4_single_safe.json",
+		"trajectory_motor_3_single_safe.json",
+		"trajectory_motor_2_single_safe.json"
 	]
 	
 	concatenated_traj = generator.concatenate_trajectories_sequential(
@@ -1187,5 +1659,67 @@ def main():
 	print("✓ 同时运动")
 	print("✓ 多频率复合")
 
+def test_safety_features():
+	"""测试安全功能的专用函数"""
+	print("=== 安全功能测试 ===\n")
+	
+	# 初始化带URDF的生成器（自动检测关节数量）
+	urdf_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/robot_8dof/urdf/robot_8dof_updated.urdf"
+	generator = TrajectoryGenerator(urdf_path=urdf_path)
+	
+	print("\n1. 测试关节限制约束...")
+	# 生成一个可能超出限制的轨迹
+	unsafe_traj = generator.generate_single_motor_trajectory(
+		motor_id=1, 
+		min_angle=-50.0,  # 超出安全范围
+		max_angle=20.0,   # 超出安全范围
+		duration=5.0
+	)
+	
+	# 验证原始轨迹
+	validation = generator.validate_trajectory_safety(unsafe_traj)
+	print(f"原始轨迹安全性: {'✓ 安全' if validation['is_safe'] else '✗ 有风险'}")
+	
+	# 应用安全约束
+	safe_traj = generator.apply_safety_constraints_to_trajectory(unsafe_traj)
+	safe_validation = generator.validate_trajectory_safety(safe_traj)
+	print(f"约束后轨迹安全性: {'✓ 安全' if safe_validation['is_safe'] else '✗ 有风险'}")
+	
+	print("\n2. 测试速度限制...")
+	for motor_id in [1, 2, 3]:
+		traj = generator.generate_single_motor_trajectory(
+			motor_id=motor_id,
+			amplitude=30.0,
+			duration=2.0,  # 短时间内大幅运动，测试速度限制
+			num_cycles=3
+		)
+		validation = generator.validate_trajectory_safety(traj)
+		stats = validation['statistics'].get(f'motor_{motor_id}', {})
+		max_vel = stats.get('max_abs_vel', 0)
+		print(f"电机 {motor_id} 最大速度: {max_vel:.3f} rad/s ({'✓' if max_vel <= 3.0 else '✗'})")
+	
+	print("\n3. 测试碰撞检测...")
+	# 生成可能导致碰撞的轨迹（大角度joint2运动）
+	collision_traj = generator.generate_single_motor_trajectory(
+		motor_id=2,
+		min_angle=-10.0,
+		max_angle=150.0,  # 大角度可能导致碰撞
+		duration=8.0
+	)
+	collision_validation = generator.validate_trajectory_safety(collision_traj, check_collisions=True)
+	print(f"碰撞检测结果: {'✓ 无碰撞' if collision_validation['is_safe'] else '✗ 检测到潜在碰撞'}")
+	
+	print("\n4. 生成MuJoCo场景文件...")
+	mujoco_xml = generator.create_mujoco_scene_with_obstacle(urdf_path)
+	with open("/Users/lr-2002/project/instantcreation/IC_arm_control/robot_with_obstacle.xml", "w") as f:
+		f.write(mujoco_xml)
+	print("✓ MuJoCo场景文件已生成: robot_with_obstacle.xml")
+	
+	return generator
+
 if __name__ == "__main__":
-	main()
+	import sys
+	if len(sys.argv) > 1 and sys.argv[1] == "--test-safety":
+		test_safety_features()
+	else:
+		main()
