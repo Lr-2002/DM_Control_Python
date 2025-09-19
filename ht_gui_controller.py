@@ -5,11 +5,14 @@ HT电机GUI控制器
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import threading
 import time
 import math
-from typing import Optional
+import json
+import os
+from datetime import datetime
+from typing import Optional, List, Dict
 
 # 导入必要的模块
 HARDWARE_AVAILABLE = False
@@ -35,57 +38,7 @@ try:
        
 except ImportError as e:
     print(f"导入模块失败: {e}")
-    # 创建模拟类用于GUI测试
-    class MotorType:
-        HIGH_TORQUE = 2
-    
-    class MotorInfo:
-        def __init__(self, motor_id, motor_type, can_id, name=""):
-            self.motor_id = motor_id
-            self.motor_type = motor_type
-            self.can_id = can_id
-            self.name = name
-    
-    class USB_HW:
-        def init(self): return True
-        def close(self): pass
-        def setFrameCallback(self, callback): pass
-        def fdcanFrameSend(self, data, can_id): pass
-    
-    class MockMotor:
-        def __init__(self):
-            self.position = 0.0
-            self.velocity = 0.0
-            self.torque = 0.0
-        
-        def enable(self): return True
-        def disable(self): return True
-        def set_zero(self): return True
-        def set_command(self, pos, vel, kp, kd, tau): return True
-        def update_state(self): return True
-        def get_position(self): return self.position
-        def get_velocity(self): return self.velocity
-        def get_torque(self): return self.torque
-    
-    class MotorManager:
-        def __init__(self, usb_hw):
-            self.motors = {}
-        
-        def add_ht_protocol(self, ht_manager): pass
-        def add_motor(self, motor_id, motor_type, motor_info, **kwargs):
-            self.motors[motor_id] = MockMotor()
-            return True
-        
-        def get_motor(self, motor_id):
-            return self.motors.get(motor_id)
-        
-        def update_all_states(self): return True
-        def send_all_commands(self): return True
-    
-    class HTMotorManager:
-        def __init__(self, usb_hw, as_sub_module=False): pass
-
-
+    pass
 class HTMotorGUIController:
     """HT电机GUI控制器"""
     
@@ -116,6 +69,22 @@ class HTMotorGUIController:
         self.is_enabled = False
         self.monitoring_thread = None
         self.stop_monitoring = False
+        
+        # 录制回放功能
+        self.is_recording = False
+        self.is_playing = False
+        self.recorded_trajectory = []
+        self.recording_start_time = None
+        self.playback_thread = None
+        self.stop_playback = False
+        self.recording_interval = 0.005  # 5ms录制间隔 (200Hz)
+        
+        # 连续控制功能
+        self.is_continuous_control = False
+        self.continuous_control_thread = None
+        self.stop_continuous_control = False
+        self.last_target1 = 0.0
+        self.last_target2 = 0.0
         
         self.setup_ui()
         
@@ -194,12 +163,10 @@ class HTMotorGUIController:
         motor1_btn_frame = ttk.Frame(motor1_frame)
         motor1_btn_frame.grid(row=8, column=0, pady=(20, 0))
         
-        ttk.Button(motor1_btn_frame, text="移动到目标", 
-                  command=lambda: self.move_motor_to_angle(1)).grid(row=0, column=0, padx=(0, 5))
         ttk.Button(motor1_btn_frame, text="停止", 
-                  command=lambda: self.stop_motor(1)).grid(row=0, column=1, padx=(0, 5))
+                  command=lambda: self.stop_motor(1)).grid(row=0, column=0, padx=(0, 5))
         ttk.Button(motor1_btn_frame, text="读取角度", 
-                  command=lambda: self.read_motor_angle(1)).grid(row=0, column=2)
+                  command=lambda: self.read_motor_angle(1)).grid(row=0, column=1)
         
         # 电机2控制区域
         motor2_frame = ttk.LabelFrame(main_frame, text="电机2控制", padding="10")
@@ -235,25 +202,68 @@ class HTMotorGUIController:
         motor2_btn_frame = ttk.Frame(motor2_frame)
         motor2_btn_frame.grid(row=8, column=0, pady=(20, 0))
         
-        ttk.Button(motor2_btn_frame, text="移动到目标", 
-                  command=lambda: self.move_motor_to_angle(2)).grid(row=0, column=0, padx=(0, 5))
         ttk.Button(motor2_btn_frame, text="停止", 
-                  command=lambda: self.stop_motor(2)).grid(row=0, column=1, padx=(0, 5))
+                  command=lambda: self.stop_motor(2)).grid(row=0, column=0, padx=(0, 5))
         ttk.Button(motor2_btn_frame, text="读取角度", 
-                  command=lambda: self.read_motor_angle(2)).grid(row=0, column=2)
+                  command=lambda: self.read_motor_angle(2)).grid(row=0, column=1)
         
         # 全局控制按钮
         global_frame = ttk.Frame(main_frame)
         global_frame.grid(row=3, column=0, columnspan=2, pady=(20, 0))
         
-        ttk.Button(global_frame, text="同时移动两个电机", 
-                  command=self.move_both_motors).grid(row=0, column=0, padx=(0, 10))
+        self.move_btn = ttk.Button(global_frame, text="开始连续控制", 
+                                 command=self.toggle_continuous_control, 
+                                 style="Accent.TButton")
+        self.move_btn.grid(row=0, column=0, padx=(0, 10))
         ttk.Button(global_frame, text="停止所有电机", 
                   command=self.stop_all_motors).grid(row=0, column=1, padx=(0, 10))
         ttk.Button(global_frame, text="回到零位", 
                   command=self.move_to_zero).grid(row=0, column=2, padx=(0, 10))
         ttk.Button(global_frame, text="读取所有角度", 
                   command=self.read_all_angles).grid(row=0, column=3)
+        
+        # 录制回放控制区域
+        record_frame = ttk.LabelFrame(main_frame, text="录制回放控制", padding="10")
+        record_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(10, 0))
+        
+        # 录制控制按钮
+        record_btn_frame = ttk.Frame(record_frame)
+        record_btn_frame.grid(row=0, column=0, sticky=(tk.W, tk.E))
+        
+        self.record_btn = ttk.Button(record_btn_frame, text="开始录制", 
+                                   command=self.start_recording, state="disabled")
+        self.record_btn.grid(row=0, column=0, padx=(0, 5))
+        
+        self.stop_record_btn = ttk.Button(record_btn_frame, text="停止录制", 
+                                        command=self.stop_recording, state="disabled")
+        self.stop_record_btn.grid(row=0, column=1, padx=(0, 5))
+        
+        self.play_btn = ttk.Button(record_btn_frame, text="开始回放", 
+                                 command=self.start_playback, state="disabled")
+        self.play_btn.grid(row=0, column=2, padx=(0, 5))
+        
+        self.stop_play_btn = ttk.Button(record_btn_frame, text="停止回放", 
+                                      command=self.stop_playback, state="disabled")
+        self.stop_play_btn.grid(row=0, column=3, padx=(0, 5))
+        
+        # 文件操作按钮
+        file_btn_frame = ttk.Frame(record_frame)
+        file_btn_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(10, 0))
+        
+        ttk.Button(file_btn_frame, text="保存轨迹", 
+                  command=self.save_trajectory).grid(row=0, column=0, padx=(0, 5))
+        ttk.Button(file_btn_frame, text="加载轨迹", 
+                  command=self.load_trajectory).grid(row=0, column=1, padx=(0, 5))
+        ttk.Button(file_btn_frame, text="清除轨迹", 
+                  command=self.clear_trajectory).grid(row=0, column=2, padx=(0, 5))
+        
+        # 录制状态显示
+        self.record_status_label = ttk.Label(record_frame, text="状态: 未录制", foreground="blue")
+        self.record_status_label.grid(row=2, column=0, pady=(10, 0))
+        
+        # 轨迹信息显示
+        self.trajectory_info_label = ttk.Label(record_frame, text="轨迹点数: 0")
+        self.trajectory_info_label.grid(row=3, column=0, pady=(5, 0))
         
         # 配置网格权重
         main_frame.columnconfigure(0, weight=1)
@@ -282,7 +292,7 @@ class HTMotorGUIController:
             
             # 添加两个HT电机 - 使用正确的配置
             motor1_info = MotorInfo(
-                motor_id=1,
+                motor_id=7,
                 motor_type=MotorType.HIGH_TORQUE,
                 can_id=0x8094,  # HT电机使用固定的发送ID 0x8094
                 master_id=None,
@@ -294,7 +304,7 @@ class HTMotorGUIController:
             )
             
             motor2_info = MotorInfo(
-                motor_id=2,
+                motor_id=8,
                 motor_type=MotorType.HIGH_TORQUE,
                 can_id=0x8094,  # HT电机使用固定的发送ID 0x8094
                 master_id=None,
@@ -306,15 +316,15 @@ class HTMotorGUIController:
             )
             
             # 添加电机到管理器 - HT电机ID从1开始
-            if not self.motor_manager.add_motor(1, 'ht', motor1_info, ht_motor_id=1):
+            if not self.motor_manager.add_motor(7, 'ht', motor1_info, ht_motor_id=7):
                 raise Exception("电机1添加失败")
                 
-            if not self.motor_manager.add_motor(2, 'ht', motor2_info, ht_motor_id=2):
+            if not self.motor_manager.add_motor(8, 'ht', motor2_info, ht_motor_id=8):
                 raise Exception("电机2添加失败")
             
             # 获取电机实例
-            self.motor1 = self.motor_manager.get_motor(1)
-            self.motor2 = self.motor_manager.get_motor(2)
+            self.motor1 = self.motor_manager.get_motor(7)
+            self.motor2 = self.motor_manager.get_motor(8)
             
             if not self.motor1 or not self.motor2:
                 raise Exception("获取电机实例失败")
@@ -405,32 +415,111 @@ class HTMotorGUIController:
         except Exception as e:
             messagebox.showerror("错误", f"设置零位时出错: {str(e)}")
     
-    def move_motor_to_angle(self, motor_num):
-        """移动指定电机到目标角度"""
+    def toggle_continuous_control(self):
+        """切换连续控制模式"""
         try:
             if not self.is_enabled:
                 messagebox.showerror("错误", "请先使能电机")
                 return
             
-            if motor_num == 1:
-                target_rad = math.radians(self.motor1_target_angle.get())
-                motor = self.motor1
+            if self.is_continuous_control:
+                # 停止连续控制
+                self.stop_continuous_control_mode()
             else:
-                target_rad = math.radians(self.motor2_target_angle.get())
-                motor = self.motor2
+                # 开始连续控制
+                self.start_continuous_control_mode()
+                
+        except Exception as e:
+            messagebox.showerror("错误", f"切换连续控制模式时出错: {str(e)}")
+    
+    def start_continuous_control_mode(self):
+        """开始连续控制模式"""
+        try:
+            self.is_continuous_control = True
+            self.stop_continuous_control = False
             
-            # 使用MIT控制模式 - HT电机的正确方式
-            kp = self.kp.get()
-            kd = self.kd.get()
+            # 记录初始目标角度
+            self.last_target1 = self.motor1_target_angle.get()
+            self.last_target2 = self.motor2_target_angle.get()
             
-            # 设置命令到缓存
-            motor.set_command(target_rad, 0.0, kp, kd, 0.0)
+            # 更新UI状态
+            self.update_ui_state()
             
-            # 批量发送所有HT电机命令（一拖多方式）
-            self.motor_manager.send_all_commands()
+            # 启动连续控制线程
+            self.continuous_control_thread = threading.Thread(target=self.continuous_control_loop, daemon=True)
+            self.continuous_control_thread.start()
+            
+            print("连续控制模式已启动")
             
         except Exception as e:
-            messagebox.showerror("错误", f"移动电机时出错: {str(e)}")
+            messagebox.showerror("错误", f"启动连续控制失败: {str(e)}")
+    
+    def stop_continuous_control_mode(self):
+        """停止连续控制模式"""
+        try:
+            self.stop_continuous_control = True
+            self.is_continuous_control = False
+            
+            # 更新UI状态
+            self.update_ui_state()
+            
+            print("连续控制模式已停止")
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"停止连续控制失败: {str(e)}")
+    
+    def continuous_control_loop(self):
+        """连续控制循环线程"""
+        try:
+            # 确保电机已初始化
+            if not self.motor1 or not self.motor2:
+                print("错误: 电机未初始化")
+                return
+                
+            print(f"连续控制开始: 初始目标角度 电机1={self.last_target1}°, 电机2={self.last_target2}°")
+            
+            while not self.stop_continuous_control and self.is_continuous_control:
+                # 获取当前目标角度
+                current_target1 = self.motor1_target_angle.get()
+                current_target2 = self.motor2_target_angle.get()
+                
+                # # 检查目标角度是否改变
+                # target_changed = (abs(current_target1 - self.last_target1) > 0.1 or 
+                #                 abs(current_target2 - self.last_target2) > 0.1)
+                
+                # if target_changed:
+                #     print(f"目标角度改变: 电机1: {self.last_target1:.1f}° -> {current_target1:.1f}°, "
+                #           f"电机2: {self.last_target2:.1f}° -> {current_target2:.1f}°")
+                #     self.last_target1 = current_target1
+                #     self.last_target2 = current_target2
+                
+                # 转换为弧度
+                target1_rad = math.radians(current_target1)
+                target2_rad = math.radians(current_target2)
+                
+                # 获取PID参数
+                kp = self.kp.get()
+                kd = self.kd.get()
+                
+                # # 调试输出
+                # print(f"发送命令: 电机1={target1_rad:.4f}rad({current_target1:.1f}°), "
+                #       f"电机2={target2_rad:.4f}rad({current_target2:.1f}°), "
+                #       f"Kp={kp}, Kd={kd}")
+                
+                # 发送控制命令
+                self.motor1.set_command(target1_rad, 0.0, kp, kd, 0.0)
+                self.motor2.set_command(target2_rad, 0.0, kp, kd, 0.0)
+                self.motor_manager.send_all_commands()
+                
+                # 控制频率 - 200Hz
+                time.sleep(0.005)
+                
+        except Exception as e:
+            print(f"连续控制循环错误: {e}")
+            self.root.after(0, lambda: messagebox.showerror("错误", f"连续控制过程中出错: {str(e)}"))
+        finally:
+            self.is_continuous_control = False
+            self.root.after(0, self.update_ui_state)
     
     def stop_motor(self, motor_num):
         """停止指定电机 - HT电机需要批量停止"""
@@ -613,12 +702,34 @@ class HTMotorGUIController:
             self.enable_btn.config(state="normal" if not self.is_enabled else "disabled")
             self.disable_btn.config(state="normal" if self.is_enabled else "disabled")
             self.zero_btn.config(state="normal")
+            # 录制功能需要电机使能且不在连续控制中
+            if self.is_enabled and not self.is_recording and not self.is_playing and not self.is_continuous_control:
+                self.record_btn.config(state="normal")
+            else:
+                self.record_btn.config(state="disabled")
+            
+            # 连续控制按钮状态
+            if self.is_enabled and not self.is_recording and not self.is_playing:
+                self.move_btn.config(state="normal")
+                if self.is_continuous_control:
+                    self.move_btn.config(text="停止连续控制")
+                else:
+                    self.move_btn.config(text="开始连续控制")
+            else:
+                self.move_btn.config(state="disabled")
         else:
             self.connect_btn.config(state="normal")
             self.disconnect_btn.config(state="disabled")
             self.enable_btn.config(state="disabled")
             self.disable_btn.config(state="disabled")
             self.zero_btn.config(state="disabled")
+            # 断开连接时禁用所有录制功能和连续控制
+            self.record_btn.config(state="disabled")
+            self.stop_record_btn.config(state="disabled")
+            self.play_btn.config(state="disabled")
+            self.stop_play_btn.config(state="disabled")
+            self.move_btn.config(state="disabled")
+            self.move_btn.config(text="开始连续控制")
     
     def start_monitoring(self):
         """启动监控线程"""
@@ -634,20 +745,40 @@ class HTMotorGUIController:
     
     def monitor_motors(self):
         """监控电机状态"""
+        last_record_time = 0
+        
         while not self.stop_monitoring and self.is_connected:
             try:
                 if self.motor1 and self.motor2:
                     # 更新电机状态
                     self.motor_manager.update_all_states()
                     
+                    # 录制功能：记录当前位置
+                    current_time = time.time()
+                    if (self.is_recording and 
+                        current_time - last_record_time >= self.recording_interval):
+                        
+                        motor1_pos = self.motor1.get_position()
+                        motor2_pos = self.motor2.get_position()
+                        
+                        # 记录相对时间戳
+                        relative_time = current_time - self.recording_start_time
+                        self.recorded_trajectory.append([relative_time, motor1_pos, motor2_pos])
+                        
+                        last_record_time = current_time
+                        
+                        # 更新轨迹信息显示
+                        self.root.after(0, lambda: 
+                            self.trajectory_info_label.config(text=f"轨迹点数: {len(self.recorded_trajectory)}"))
+                    
                     # 更新UI显示
                     self.root.after(0, self.update_motor_display)
                 
-                time.sleep(0.1)  # 100ms更新间隔
+                time.sleep(0.005)  # 5ms更新间隔 (200Hz)，提高录制精度
                 
             except Exception as e:
                 print(f"监控线程错误: {e}")
-                time.sleep(0.5)
+                time.sleep(0.1)
     
     def update_motor_display(self):
         """更新电机显示信息"""
@@ -677,9 +808,237 @@ class HTMotorGUIController:
         except Exception as e:
             print(f"更新显示时出错: {e}")
     
+    def start_recording(self):
+        """开始录制电机轨迹"""
+        try:
+            if not self.is_enabled:
+                messagebox.showerror("错误", "请先使能电机")
+                return
+            
+            self.is_recording = True
+            self.recorded_trajectory = []
+            self.recording_start_time = time.time()
+            
+            # 更新UI状态
+            self.record_btn.config(state="disabled")
+            self.stop_record_btn.config(state="normal")
+            self.play_btn.config(state="disabled")
+            self.record_status_label.config(text="状态: 正在录制...", foreground="red")
+            
+            messagebox.showinfo("录制", "开始录制电机轨迹！\n请手动移动电机到各个位置。")
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"开始录制失败: {str(e)}")
+    
+    def stop_recording(self):
+        """停止录制"""
+        try:
+            self.is_recording = False
+            
+            # 更新UI状态
+            self.record_btn.config(state="normal")
+            self.stop_record_btn.config(state="disabled")
+            if len(self.recorded_trajectory) > 0:
+                self.play_btn.config(state="normal")
+            
+            duration = time.time() - self.recording_start_time if self.recording_start_time else 0
+            self.record_status_label.config(text=f"状态: 录制完成 ({duration:.1f}秒)", foreground="green")
+            self.trajectory_info_label.config(text=f"轨迹点数: {len(self.recorded_trajectory)}")
+            
+            messagebox.showinfo("录制", f"录制完成！\n录制时长: {duration:.1f}秒\n轨迹点数: {len(self.recorded_trajectory)}")
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"停止录制失败: {str(e)}")
+    
+    def start_playback(self):
+        """开始回放轨迹"""
+        try:
+            if not self.is_enabled:
+                messagebox.showerror("错误", "请先使能电机")
+                return
+            
+            if len(self.recorded_trajectory) == 0:
+                messagebox.showerror("错误", "没有可回放的轨迹")
+                return
+            
+            result = messagebox.askyesno("确认", f"确定要回放轨迹吗？\n轨迹点数: {len(self.recorded_trajectory)}")
+            if not result:
+                return
+            
+            self.is_playing = True
+            self.stop_playback = False
+            
+            # 更新UI状态
+            self.record_btn.config(state="disabled")
+            self.play_btn.config(state="disabled")
+            self.stop_play_btn.config(state="normal")
+            self.record_status_label.config(text="状态: 正在回放...", foreground="orange")
+            
+            # 启动回放线程
+            self.playback_thread = threading.Thread(target=self.playback_trajectory, daemon=True)
+            self.playback_thread.start()
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"开始回放失败: {str(e)}")
+    
+    def stop_playback(self):
+        """停止回放"""
+        try:
+            self.stop_playback = True
+            self.is_playing = False
+            
+            # 更新UI状态
+            self.record_btn.config(state="normal")
+            self.play_btn.config(state="normal")
+            self.stop_play_btn.config(state="disabled")
+            self.record_status_label.config(text="状态: 回放已停止", foreground="blue")
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"停止回放失败: {str(e)}")
+    
+    def playback_trajectory(self):
+        """回放轨迹线程函数"""
+        try:
+            start_time = time.time()
+            
+            for i, point in enumerate(self.recorded_trajectory):
+                if self.stop_playback:
+                    break
+                
+                timestamp, motor1_pos, motor2_pos = point
+                
+                # 计算目标时间
+                target_time = start_time + timestamp
+                current_time = time.time()
+                
+                # 等待到目标时间，但不超过最大等待时间
+                if current_time < target_time:
+                    wait_time = min(target_time - current_time, 0.1)  # 最大等待100ms
+                    if wait_time > 0:
+                        time.sleep(wait_time)
+                
+                # 设置电机位置
+                kp = self.kp.get()
+                kd = self.kd.get()
+                
+                self.motor1.set_command(motor1_pos, 0.0, kp, kd, 0.0)
+                self.motor2.set_command(motor2_pos, 0.0, kp, kd, 0.0)
+                self.motor_manager.send_all_commands()
+                
+                # 更新进度
+                progress = (i + 1) / len(self.recorded_trajectory) * 100
+                self.root.after(0, lambda p=progress: 
+                    self.record_status_label.config(text=f"状态: 回放中... ({p:.1f}%)", foreground="orange"))
+            
+            # 回放完成
+            if not self.stop_playback:
+                self.root.after(0, lambda: 
+                    self.record_status_label.config(text="状态: 回放完成", foreground="green"))
+            
+            # 重置状态
+            self.is_playing = False
+            self.root.after(0, lambda: [
+                self.record_btn.config(state="normal"),
+                self.play_btn.config(state="normal"),
+                self.stop_play_btn.config(state="disabled")
+            ])
+            
+        except Exception as e:
+            self.root.after(0, lambda: messagebox.showerror("错误", f"回放过程中出错: {str(e)}"))
+            self.is_playing = False
+    
+    def save_trajectory(self):
+        """保存轨迹到文件"""
+        try:
+            if len(self.recorded_trajectory) == 0:
+                messagebox.showerror("错误", "没有可保存的轨迹")
+                return
+            
+            # 选择保存文件
+            filename = filedialog.asksaveasfilename(
+                title="保存轨迹文件",
+                defaultextension=".json",
+                filetypes=[("JSON文件", "*.json"), ("所有文件", "*.*")],
+                initialname=f"trajectory_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            )
+            
+            if filename:
+                trajectory_data = {
+                    "timestamp": datetime.now().isoformat(),
+                    "motor_count": 2,
+                    "recording_interval": self.recording_interval,
+                    "trajectory": self.recorded_trajectory,
+                    "metadata": {
+                        "total_points": len(self.recorded_trajectory),
+                        "duration": self.recorded_trajectory[-1][0] if self.recorded_trajectory else 0
+                    }
+                }
+                
+                with open(filename, 'w', encoding='utf-8') as f:
+                    json.dump(trajectory_data, f, indent=2, ensure_ascii=False)
+                
+                messagebox.showinfo("保存成功", f"轨迹已保存到:\n{filename}")
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"保存轨迹失败: {str(e)}")
+    
+    def load_trajectory(self):
+        """从文件加载轨迹"""
+        try:
+            # 选择加载文件
+            filename = filedialog.askopenfilename(
+                title="加载轨迹文件",
+                filetypes=[("JSON文件", "*.json"), ("所有文件", "*.*")]
+            )
+            
+            if filename:
+                with open(filename, 'r', encoding='utf-8') as f:
+                    trajectory_data = json.load(f)
+                
+                self.recorded_trajectory = trajectory_data.get("trajectory", [])
+                
+                # 更新UI显示
+                self.trajectory_info_label.config(text=f"轨迹点数: {len(self.recorded_trajectory)}")
+                if len(self.recorded_trajectory) > 0:
+                    self.play_btn.config(state="normal")
+                    duration = trajectory_data.get("metadata", {}).get("duration", 0)
+                    self.record_status_label.config(text=f"状态: 已加载轨迹 ({duration:.1f}秒)", foreground="blue")
+                
+                messagebox.showinfo("加载成功", 
+                    f"轨迹加载成功！\n文件: {os.path.basename(filename)}\n轨迹点数: {len(self.recorded_trajectory)}")
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"加载轨迹失败: {str(e)}")
+    
+    def clear_trajectory(self):
+        """清除当前轨迹"""
+        try:
+            if len(self.recorded_trajectory) == 0:
+                messagebox.showinfo("提示", "当前没有轨迹数据")
+                return
+            
+            result = messagebox.askyesno("确认", "确定要清除当前轨迹吗？")
+            if result:
+                self.recorded_trajectory = []
+                self.trajectory_info_label.config(text="轨迹点数: 0")
+                self.play_btn.config(state="disabled")
+                self.record_status_label.config(text="状态: 轨迹已清除", foreground="blue")
+                messagebox.showinfo("清除", "轨迹已清除")
+            
+        except Exception as e:
+            messagebox.showerror("错误", f"清除轨迹失败: {str(e)}")
+    
     def on_closing(self):
         """窗口关闭事件"""
         try:
+            # 停止录制、回放和连续控制
+            if self.is_recording:
+                self.stop_recording()
+            if self.is_playing:
+                self.stop_playback()
+            if self.is_continuous_control:
+                self.stop_continuous_control_mode()
+            
             self.disconnect_motors()
         except:
             pass
