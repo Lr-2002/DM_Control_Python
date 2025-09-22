@@ -86,10 +86,12 @@ class ServoMotor:
 			velocity: 运动速度 (0-4095)
 		"""
 		# 限制位置范围 0-4095
-		position = max(min(position, 4095), 0)
-		velocity = max(min(velocity, 4095), 1)
-		
+		position = max(min(position, 2 * 3.14), 0)
+		velocity = max(min(velocity, 2 * 3.14), 1)
+		position = int(position / 2 / 3.14 * 4095)
+		velocity = int(velocity / 2 / 3.14 * 4095)
 		# 构造命令: [0x02, pos_high, pos_low, vel_high, vel_low, 0, 0, 0]
+		# breakpoint()
 		cmd = [
 			ServoControlMode.POSITION,
 			(position >> 8) & 0xFF,  # 位置高8位

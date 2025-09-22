@@ -467,6 +467,7 @@ class UnifiedMotor:
         self.motor_id = motor_id
         self.protocol = protocol
         self.info = motor_info
+        self.motor_info = motor_info
         self.feedback = MotorFeedback()
 
     # 细粒度接口

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
 零点设置工具
-用于设置IC ARM的零点位置
+用于设置IC ARM的零点位置（支持前8个电机：m1-m6为Damiao电机，m7-m8为HT电机，排除servo电机）
 """
 
 from ic_arm_control.control.IC_ARM import ICARM
 import time
 import sys
-MOTOR_LIST = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6']
+MOTOR_LIST = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8']
 
 def display_current_positions(arm, duration=None):
     """
@@ -99,6 +99,11 @@ def main():
     print("=" * 60)
     print("           IC ARM 零点设置工具")
     print("=" * 60)
+    print("支持电机:")
+    print("• m1-m6: Damiao电机")
+    print("• m7-m8: HT电机")
+    print("• 注意：servo电机(m9)不支持零点设置")
+    print()
     print("注意事项:")
     print("• 请先手动移动机械臂到期望的零点位置")
     print("• 零点设置为软件零位，重启后需要重新设置")

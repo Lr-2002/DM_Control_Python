@@ -32,6 +32,8 @@ from ic_arm_control.control.servo_motor import ServoMotorManager
 from ic_arm_control.control.src import usb_class
 from ic_arm_control.control.usb_hw_wrapper import USBHardwareWrapper
 
+# 电机名称列表（排除servo电机）
+MOTOR_LIST = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8']
 
 def debug_print(msg: str, level: str = "INFO"):
     """Debug print with timestamp"""
@@ -447,27 +449,40 @@ class ICARM:
         self, speed: float = 0.5, timeout: float = 30.0, frequency=100
     ) -> bool:
         """
-        让所有电机平滑地回到零位
+        让机械臂主要关节平滑地回到零位（前8个电机，排除servo电机）
 
         Args:
             speed: 回零速度 (rad/s)，默认0.5 rad/s
             timeout: 超时时间 (秒)，默认30秒
+            frequency: 控制频率 (Hz)，默认100Hz
 
         Returns:
             bool: 是否成功回零
         """
-        debug_print("开始执行回零操作...")
+        debug_print("开始执行回零操作（前8个电机，保持servo电机不动）...")
 
         try:
-            # 获取当前位置
-            current_positions = self.get_joint_positions()
-            if current_positions is None:
+            # 获取所有电机的当前位置
+            all_positions = self.get_joint_positions()
+            if all_positions is None:
                 debug_print("无法获取当前位置", "ERROR")
                 return False
 
+            # 只对前8个电机进行回零操作
+            num_control_motors = len(MOTOR_LIST)  # 8个电机
+            current_positions = all_positions[:num_control_motors]
+            
+            debug_print(f"控制电机: {MOTOR_LIST}")
             debug_print(
-                f"当前位置: {[f'{np.degrees(pos):.1f}°' for pos in current_positions]}"
+                f"当前位置: {[f'{MOTOR_LIST[i]}={np.degrees(current_positions[i]):.1f}°' for i in range(len(current_positions))]}"
             )
+            
+            # 如果有第9个电机（servo），显示但不控制
+            if len(all_positions) > num_control_motors:
+                servo_pos = all_positions[num_control_motors]
+                debug_print(f"servo电机(m9)当前位置: {np.degrees(servo_pos):.1f}° (保持不动)")
+            
+            debug_print(f"回零操作将控制前{num_control_motors}个电机，servo电机保持当前位置")
 
             # 计算需要移动的距离和时间
             max_distance = max(abs(pos) for pos in current_positions)
@@ -527,13 +542,23 @@ class ICARM:
                     1 - np.cos(np.pi * progress)
                 )  # 余弦插值，起始和结束速度为0
 
-                target_positions = current_positions * (1 - smooth_progress)
+                # 计算前8个电机的目标位置
+                target_positions_control = current_positions * (1 - smooth_progress)
+                
+                # 构造完整的目标位置数组（包括servo电机的当前位置）
+                if len(all_positions) > num_control_motors:
+                    # 保持servo电机在当前位置
+                    target_positions_full = np.zeros(len(all_positions))
+                    target_positions_full[:num_control_motors] = target_positions_control
+                    target_positions_full[num_control_motors:] = all_positions[num_control_motors:]
+                else:
+                    target_positions_full = target_positions_control
 
                 # 发送位置命令
                 if self.gc_flag:
-                    success = self.set_joint_positions_with_gc(target_positions)
+                    success = self.set_joint_positions_with_gc(target_positions_full)
                 else:
-                    success = self.set_joint_positions(target_positions)
+                    success = self.set_joint_positions(target_positions_full)
                 if not success:
                     debug_print(f"发送位置命令失败 (步骤 {i})", "ERROR")
                     return False
@@ -542,9 +567,11 @@ class ICARM:
                 if i % (num_steps // 10) == 0 or i == num_steps:
                     current_pos = self.get_joint_positions(refresh=False)
                     if current_pos is not None:
-                        max_error = max(abs(pos) for pos in current_pos)
+                        # 只检查前8个电机的误差
+                        control_pos = current_pos[:num_control_motors]
+                        max_error = max(abs(pos) for pos in control_pos)
                         debug_print(
-                            f"回零进度: {progress * 100:.0f}%, 最大偏差: {np.degrees(max_error):.2f}°"
+                            f"回零进度: {progress * 100:.0f}%, 最大偏差: {np.degrees(max_error):.2f}° (前{num_control_motors}个电机)"
                         )
 
                 # 等待下一步
@@ -553,16 +580,25 @@ class ICARM:
 
             # 验证回零结果
             # time.sleep(0.5)  # 等待稳定
-            final_positions = self.get_joint_positions()
+            final_all_positions = self.get_joint_positions()
 
-            if final_positions is not None:
-                max_error = max(abs(pos) for pos in final_positions)
+            if final_all_positions is not None:
+                # 只验证前8个电机的回零结果
+                final_control_positions = final_all_positions[:num_control_motors]
+                max_error = max(abs(pos) for pos in final_control_positions)
+                
                 debug_print(
-                    f"回零完成! 最终位置: {[f'{np.degrees(pos):.2f}°' for pos in final_positions]}"
+                    f"回零完成! 控制电机最终位置: {[f'{MOTOR_LIST[i]}={np.degrees(final_control_positions[i]):.2f}°' for i in range(len(final_control_positions))]}"
                 )
-                debug_print(f"最大误差: {np.degrees(max_error):.2f}°")
+                
+                # 显示servo电机位置（如果存在）
+                if len(final_all_positions) > num_control_motors:
+                    servo_final_pos = final_all_positions[num_control_motors]
+                    debug_print(f"servo电机(m9)最终位置: {np.degrees(servo_final_pos):.2f}° (未控制)")
+                
+                debug_print(f"控制电机最大误差: {np.degrees(max_error):.2f}°")
 
-                # 判断是否成功回零 (误差小于1度认为成功)
+                # 判断是否成功回零 (误差小于3度认为成功)
                 if max_error < np.radians(3):
                     debug_print("✓ 回零成功!", "INFO")
                     return True
@@ -752,15 +788,21 @@ class ICARM:
     @property
     def motors(self):
         return self.motor_manager.motors
+    
+    @property
+    def motor_names(self):
+        """返回所有电机的名称列表（除了servo）"""
+        # 返回前8个电机的名称（排除第9个servo电机）
+        return [f"m{i+1}" for i in range(8)]
 
     def set_all_zero_positions(self) -> bool:
         """
-        设置所有关节的零点位置
+        设置所有关节的零点位置（排除servo电机）
 
         Returns:
             bool: 是否成功设置所有关节零点
         """
-        debug_print("设置所有关节零点位置...")
+        debug_print("设置所有关节零点位置（排除servo电机）...")
 
         try:
             # 获取当前所有关节位置
@@ -769,20 +811,37 @@ class ICARM:
                 debug_print("无法获取当前位置", "ERROR")
                 return False
 
-            # 显示当前位置信息
+            # 显示当前位置信息（只显示前8个电机）
             for i, name in enumerate(MOTOR_LIST):
                 if i < len(current_positions):
                     debug_print(
                         f"{name}: 当前位置 {current_positions[i]:.2f}° 将设为零点"
                     )
 
-            # 使用MotorManager的set_all_zero方法设置所有电机的零点
-            success = self.motor_manager.set_all_zero()
+            # 只设置前8个电机的零点（排除servo电机）
+            success_count = 0
+            total_motors = len(MOTOR_LIST)
+            
+            for i in range(total_motors):
+                motor_id = i + 1  # 电机ID从1开始
+                motor = self.motor_manager.get_motor(motor_id)
+                if motor is not None:
+                    try:
+                        if motor.set_zero():
+                            success_count += 1
+                            debug_print(f"✓ {MOTOR_LIST[i]} 零点设置成功")
+                        else:
+                            debug_print(f"⚠ {MOTOR_LIST[i]} 零点设置失败", "WARNING")
+                    except Exception as e:
+                        debug_print(f"⚠ {MOTOR_LIST[i]} 零点设置异常: {e}", "WARNING")
+                else:
+                    debug_print(f"⚠ 无法获取电机 {MOTOR_LIST[i]}", "WARNING")
 
+            success = success_count == total_motors
             if success:
-                debug_print(f"✓ 所有关节零点设置成功")
+                debug_print(f"✓ 所有关节零点设置成功 ({success_count}/{total_motors})")
             else:
-                debug_print(f"⚠ 部分关节零点设置失败", "WARNING")
+                debug_print(f"⚠ 部分关节零点设置失败 ({success_count}/{total_motors})", "WARNING")
 
             return success
 
