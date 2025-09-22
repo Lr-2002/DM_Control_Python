@@ -24,6 +24,14 @@
             "request": "launch",
             "program": "${workspaceFolder}/position_monitor.py",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Python Debugger: zero position",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/test_home_to_zero.py",
+            "console": "integratedTerminal"
         }
+
     ]
 }

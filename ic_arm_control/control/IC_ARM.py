@@ -108,9 +108,9 @@ class ICARM:
             MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 0, 0),
             MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 0, 0),
             MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 0, 0),
-            MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 0, 0),
-            MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 0, 0),
-            MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 0, 0),
+            MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 25, 0.8),
+            MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 10, 0),
+            MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 10, 0),
             MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0),
         ]
 
@@ -310,10 +310,10 @@ class ICARM:
     ):
         """Send command to a single motor using unified interface"""
         motor = self.motor_manager.get_motor(motor_id)
+        motor_info = self.motor_manager.get_motor_info(motor_id)
         if motor is None:
             return False
 
-        motor_info = motor.motor_info
         return motor.set_command(
             position_rad, velocity_rad_s, motor_info.kp, motor_info.kd, torque_nm
         )

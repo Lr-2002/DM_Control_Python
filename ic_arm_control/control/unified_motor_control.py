@@ -32,11 +32,13 @@ class MotorProtocol(ABC):
     def __init__(self, usb_hw):
         self.usb_hw = usb_hw
         self.motors = {}  # motor_id -> motor_instance
+        self.motor_infos = {}  # motor_id -> motor_info
 
     @abstractmethod
     def add_motor(self, motor_info: MotorInfo) -> bool:
         """添加电机到协议中"""
-        pass
+        self.motor_infos[motor_info.motor_id] = motor_info
+        return True
 
     @abstractmethod
     def enable_motor(self, motor_id: int) -> bool:
@@ -86,6 +88,7 @@ class DamiaoProtocol(MotorProtocol):
 
     def add_motor(self, motor_info: MotorInfo) -> bool:
         """添加达妙电机"""
+        super().add_motor(motor_info)
         motor= DM_Motor(
                 motor_info.motor_index,
                 Control_Mode.MIT_MODE,
@@ -215,6 +218,8 @@ class ServoProtocol(MotorProtocol):
 
     def add_motor(self, motor_info: MotorInfo) -> bool:
         """添加伺服电机"""
+
+        super().add_motor(motor_info)
         servo =Servo_Motor(
                 self.usb_hw,
                 motor_info.motor_id,
@@ -327,10 +332,11 @@ class HTProtocol(MotorProtocol):
         super().__init__(usb_hw)
         self.ht_manager = ht_manager_instance  # 现有的HTMotorManager实例
         self.pending_commands = {}  # motor_id -> (pos, vel, kp, kd, tau)
+        self.motor_infos = {}
 
     def add_motor(self, motor_info: MotorInfo) -> bool:
         """添加HT电机"""
-        
+        super().add_motor(motor_info)
         motor = self.ht_manager.add_motor(motor_info.motor_id)
         self.motors[motor_info.motor_id] = motor
         
@@ -507,6 +513,7 @@ class UnifiedMotor:
         self, pos: float, vel: float, kp: float, kd: float, tau: float
     ) -> bool:
         """设置MIT控制命令"""
+        print("set_command", self.motor_id, pos, vel, kp, kd, tau)
         return self.protocol.set_command(self.motor_id, pos, vel, kp, kd, tau)
 
     def enable(self) -> bool:
@@ -566,6 +573,7 @@ class MotorManager:
         # 创建CAN帧分发器
         self.can_dispatcher = CANFrameDispatcher(usb_hw)
         self.motor_cnt = 0
+        self.motor_infos = {}
 
     def add_protocol(self, protocol_instance, protocol_type=None):
         """添加协议 - 自动识别协议类型并加载其中的电机"""
@@ -612,14 +620,18 @@ class MotorManager:
     def _load_motors_from_protocol(self, protocol_instance, protocol_type):
         """从protocol实例中加载电机到manager"""
         if hasattr(protocol_instance, 'motors') and protocol_instance.motors:
+            for motor_id, info in protocol_instance.motor_infos.items():
+                self.motor_infos[motor_id] = info
             for motor_id, motor_instance in protocol_instance.motors.items():
                 self.motor_cnt += 1
+                motor_info =None
+                # motor_instance
                 # 创建基本的MotorInfo（可能需要根据实际情况调整）
-                motor_info = MotorInfo(
-                    motor_id=motor_id,
-                    motor_type=getattr(MotorType, protocol_type.upper(), MotorType.DAMIAO),
-                    can_id=getattr(motor_instance, 'can_id', motor_id)
-                )
+                # motor_info = MotorInfo(
+                #     motor_id=motor_id,
+                #     motor_type=getattr(MotorType, protocol_type.upper(), MotorType.DAMIAO),
+                #     can_id=getattr(motor_instance, 'can_id', motor_id)
+                # )
                 self.add_motor(motor_id, protocol_type, motor_info)
                 print(f"Loaded motor {motor_id} from {protocol_type} protocol")
     
@@ -637,6 +649,8 @@ class MotorManager:
         else:
             return "unknown"
 
+    def get_motor_info(self, motor_id):
+        return self.motor_infos[motor_id]
     # 向后兼容的方法
     def add_damiao_protocol(self, motor_control_instance):
         """添加达妙电机协议 - 向后兼容"""
