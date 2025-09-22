@@ -3,3 +3,4 @@ dynamics_data*
 __pycache__
 ic_arm/urdf
 control/urdfly/identification_results
+ic_arm_control.egg-info
