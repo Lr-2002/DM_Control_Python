@@ -385,6 +385,8 @@ class HTProtocol(MotorProtocol):
             return False
 
         self.pending_commands[motor_id] = (pos, vel, kp, kd, tau)
+        if len(self.pending_commands) == len(self.motors):
+            self.send_commands()
         return True
 
     def send_commands(self) -> bool:

@@ -104,13 +104,13 @@ class ICARM:
         # 电机配置数据
         self.motors_data = [
             MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 0, 0),
-            MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x02, 0x12, 0, 0),
-            MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 0, 0),
-            MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 0, 0),
-            MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 0, 0),
-            MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 25, 0.8),
-            MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 10, 0),
-            MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 10, 0),
+            MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x02, 0x12, 30, 1.2),
+            MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 50, 1.2),
+            MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 40, 1),
+            MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 40, 1),
+            MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 30, 1),
+            MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 35, 1),
+            MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 35, 1),
             MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0),
         ]
 
@@ -313,7 +313,8 @@ class ICARM:
         motor_info = self.motor_manager.get_motor_info(motor_id)
         if motor is None:
             return False
-
+        if motor_id == 7 or motor_id==8 :
+            print("set_command", motor_id, position_rad, velocity_rad_s, motor_info.kp, motor_info.kd, torque_nm)
         return motor.set_command(
             position_rad, velocity_rad_s, motor_info.kp, motor_info.kd, torque_nm
         )
@@ -517,10 +518,10 @@ class ICARM:
                 trajectory_points.append(target_positions.copy())
                 time_points.append(i * dt)
 
-            # 可视化轨迹
-            self._plot_trajectory_preview(
-                trajectory_points, time_points, current_positions
-            )
+            # # 可视化轨迹
+            # self._plot_trajectory_preview(
+            #     trajectory_points, time_points, current_positions
+            # )
 
             # 询问用户是否继续执行
             response = input("轨迹预览完成，是否继续执行? (y/n): ").lower().strip()
