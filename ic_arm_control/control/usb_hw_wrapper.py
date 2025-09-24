@@ -80,7 +80,7 @@ class USBHardwareWrapper:
         # if idx >= 0xa0:
         #     print(1)
         xx = self.usb_hw.fdcanFrameSend(data, idx)
-        time.sleep(0.002)
+        time.sleep(0.00005)
         return xx 
 
 

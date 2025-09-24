@@ -7,35 +7,53 @@ import time
 import threading
 import queue
 import json
+import csv
 import numpy as np
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional, Union, List
 
 
 class AsyncLogManager:
     """异步日志管理器 - 不干扰主线程的日志记录系统"""
     
-    def __init__(self, log_file_path: str = "ic_arm_log.jsonl", max_queue_size: int = 1000):
+    def __init__(self, log_dir: str = "logs", log_name: str = "ic_arm_log", 
+                 save_json: bool = False, save_csv: bool = True, max_queue_size: int = 1000):
         """
         初始化异步日志管理器
         
         Args:
-            log_file_path: 日志文件路径，默认为当前目录下的ic_arm_log.jsonl
+            log_dir: 日志目录路径
+            log_name: 日志文件名称（不包含扩展名）
+            save_json: 是否保存JSON格式日志
+            save_csv: 是否保存CSV格式日志
             max_queue_size: 日志队列最大大小，防止内存溢出
         """
-        self.log_file_path = Path(log_file_path)
+        self.log_dir = Path(log_dir)
+        self.log_name = log_name
+        self.save_json = save_json
+        self.save_csv = save_csv
+        
+        # 生成时间戳文件名
+        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        self.json_file_path = self.log_dir / f"{log_name}_{self.timestamp}.jsonl" if save_json else None
+        self.csv_file_path = self.log_dir / f"{log_name}_{self.timestamp}.csv" if save_csv else None
+        
         self.log_queue = queue.Queue(maxsize=max_queue_size)
         self.worker_thread = None
         self.stop_event = threading.Event()
         self.is_running = False
         
         # 确保日志目录存在
-        self.log_file_path.parent.mkdir(parents=True, exist_ok=True)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
         
         # 性能统计
         self.total_logs = 0
         self.dropped_logs = 0
+        
+        # CSV文件头部标志
+        self.csv_headers_written = {"motor_states": False, "joint_command": False}
         
     def start(self):
         """启动异步日志线程"""
@@ -44,7 +62,12 @@ class AsyncLogManager:
             self.worker_thread = threading.Thread(target=self._log_worker, daemon=True)
             self.worker_thread.start()
             self.is_running = True
-            print(f"[AsyncLogManager] 日志系统已启动，日志文件: {self.log_file_path}")
+            files_info = []
+            if self.json_file_path:
+                files_info.append(f"JSON: {self.json_file_path}")
+            if self.csv_file_path:
+                files_info.append(f"CSV: {self.csv_file_path}")
+            print(f"[AsyncLogManager] 日志系统已启动，{', '.join(files_info)}")
             
     def stop(self):
         """停止异步日志线程"""
@@ -131,40 +154,177 @@ class AsyncLogManager:
             "total_logs": self.total_logs,
             "dropped_logs": self.dropped_logs,
             "queue_size": self.log_queue.qsize(),
-            "log_file": str(self.log_file_path)
+            "json_file": str(self.json_file_path) if self.json_file_path else None,
+            "csv_file": str(self.csv_file_path) if self.csv_file_path else None
         }
             
     def _log_worker(self):
         """后台日志写入线程"""
+        json_file = None
+        csv_files = {}
+        
         try:
-            with open(self.log_file_path, 'a', encoding='utf-8') as f:
-                while not self.stop_event.is_set():
-                    try:
-                        # 等待日志条目，超时检查停止信号
-                        log_entry = self.log_queue.get(timeout=0.1)
+            # 打开JSON文件
+            if self.save_json and self.json_file_path:
+                json_file = open(self.json_file_path, 'a', encoding='utf-8')
+                
+            while not self.stop_event.is_set():
+                try:
+                    # 等待日志条目，超时检查停止信号
+                    log_entry = self.log_queue.get(timeout=0.1)
+                    
+                    # 写入JSON文件
+                    if json_file:
                         json_line = json.dumps(log_entry, ensure_ascii=False)
-                        f.write(json_line + '\n')
-                        f.flush()  # 确保立即写入文件
-                        self.log_queue.task_done()
-                    except queue.Empty:
-                        continue
-                    except Exception as e:
-                        # 记录日志系统本身的错误，但不影响主程序
-                        print(f"[AsyncLogManager] 写入日志时出错: {e}")
-                        
-                # 处理剩余的日志条目
-                while not self.log_queue.empty():
-                    try:
-                        log_entry = self.log_queue.get_nowait()
+                        json_file.write(json_line + '\n')
+                        json_file.flush()
+                    
+                    # 写入CSV文件
+                    if self.save_csv:
+                        self._write_csv_entry(log_entry, csv_files)
+                    
+                    self.log_queue.task_done()
+                except queue.Empty:
+                    continue
+                except Exception as e:
+                    # 记录日志系统本身的错误，但不影响主程序
+                    print(f"[AsyncLogManager] 写入日志时出错: {e}")
+                    
+            # 处理剩余的日志条目
+            while not self.log_queue.empty():
+                try:
+                    log_entry = self.log_queue.get_nowait()
+                    
+                    if json_file:
                         json_line = json.dumps(log_entry, ensure_ascii=False)
-                        f.write(json_line + '\n')
-                        self.log_queue.task_done()
-                    except queue.Empty:
-                        break
-                    except Exception as e:
-                        print(f"[AsyncLogManager] 清理日志时出错: {e}")
+                        json_file.write(json_line + '\n')
+                    
+                    if self.save_csv:
+                        self._write_csv_entry(log_entry, csv_files)
+                    
+                    self.log_queue.task_done()
+                except queue.Empty:
+                    break
+                except Exception as e:
+                    print(f"[AsyncLogManager] 清理日志时出错: {e}")
+                    
         except Exception as e:
             print(f"[AsyncLogManager] 日志文件操作失败: {e}")
+        finally:
+            # 关闭所有文件
+            if json_file:
+                json_file.close()
+            for csv_file in csv_files.values():
+                if csv_file:
+                    csv_file.close()
+    
+    def _write_csv_entry(self, log_entry: dict, csv_files: dict):
+        """写入CSV条目"""
+        log_type = log_entry.get('type')
+        if not log_type or not self.csv_file_path:
+            return
+            
+        try:
+            # 为不同类型的日志创建不同的CSV文件
+            csv_file_path = self.log_dir / f"{self.log_name}_{log_type}_{self.timestamp}.csv"
+            
+            # 如果该类型的CSV文件还没有打开，则打开它
+            if log_type not in csv_files:
+                csv_files[log_type] = open(csv_file_path, 'w', newline='', encoding='utf-8')
+                
+            csv_file = csv_files[log_type]
+            
+            if log_type == 'motor_states':
+                self._write_motor_states_csv(log_entry, csv_file)
+            elif log_type == 'joint_command':
+                self._write_joint_command_csv(log_entry, csv_file)
+            else:
+                self._write_generic_csv(log_entry, csv_file)
+                
+        except Exception as e:
+            print(f"[AsyncLogManager] CSV写入错误: {e}")
+    
+    def _write_motor_states_csv(self, log_entry: dict, csv_file):
+        """写入电机状态CSV"""
+        writer = csv.writer(csv_file)
+        
+        # 写入头部（仅第一次）
+        if not self.csv_headers_written.get('motor_states', False):
+            headers = ['timestamp']
+            data = log_entry['data']
+            motor_count = len(data['positions'])
+            
+            # 添加位置列
+            for i in range(motor_count):
+                headers.append(f'position_motor_{i+1}')
+            # 添加速度列
+            for i in range(motor_count):
+                headers.append(f'velocity_motor_{i+1}')
+            # 添加力矩列
+            for i in range(motor_count):
+                headers.append(f'torque_motor_{i+1}')
+                
+            writer.writerow(headers)
+            self.csv_headers_written['motor_states'] = True
+        
+        # 写入数据行
+        row = [log_entry['timestamp']]
+        data = log_entry['data']
+        row.extend(data['positions'])
+        row.extend(data['velocities'])
+        row.extend(data['torques'])
+        
+        writer.writerow(row)
+        csv_file.flush()
+    
+    def _write_joint_command_csv(self, log_entry: dict, csv_file):
+        """写入关节命令CSV"""
+        writer = csv.writer(csv_file)
+        
+        # 写入头部（仅第一次）
+        if not self.csv_headers_written.get('joint_command', False):
+            headers = ['timestamp']
+            data = log_entry['data']
+            motor_count = len(data['target_positions'])
+            
+            # 添加目标位置列
+            for i in range(motor_count):
+                headers.append(f'target_position_motor_{i+1}')
+            # 添加目标速度列
+            for i in range(motor_count):
+                headers.append(f'target_velocity_motor_{i+1}')
+            # 添加目标力矩列
+            for i in range(motor_count):
+                headers.append(f'target_torque_motor_{i+1}')
+                
+            writer.writerow(headers)
+            self.csv_headers_written['joint_command'] = True
+        
+        # 写入数据行
+        row = [log_entry['timestamp']]
+        data = log_entry['data']
+        row.extend(data['target_positions'])
+        row.extend(data['target_velocities'])
+        row.extend(data['target_torques'])
+        
+        writer.writerow(row)
+        csv_file.flush()
+    
+    def _write_generic_csv(self, log_entry: dict, csv_file):
+        """写入通用CSV格式"""
+        writer = csv.writer(csv_file)
+        
+        # 简单的键值对格式
+        if not hasattr(self, f'_generic_header_written_{log_entry["type"]}'):
+            writer.writerow(['timestamp', 'type', 'data'])
+            setattr(self, f'_generic_header_written_{log_entry["type"]}', True)
+        
+        writer.writerow([
+            log_entry['timestamp'],
+            log_entry['type'],
+            json.dumps(log_entry['data'], ensure_ascii=False)
+        ])
+        csv_file.flush()
                     
     def __del__(self):
         """析构函数，确保线程正确关闭"""

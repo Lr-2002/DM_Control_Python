@@ -9,7 +9,7 @@ import numpy as np
 import traceback
 import logging
 from typing import Dict, List, Optional, Tuple, Any, Union
-
+import pysnooper
 # 使用新的统一电机控制系统
 from ic_arm_control.control.unified_motor_control import (
     DamiaoProtocol,
@@ -142,7 +142,9 @@ class ICARM:
         self.ddq = np.zeros(motor_count, dtype=np.float64)
         self.tau = np.zeros(motor_count, dtype=np.float64)
         self.currents = np.zeros(motor_count, dtype=np.float64)
-
+        self.positions = np.zeros(self.motor_count)
+        self.velocities = np.zeros(self.motor_count)
+        self.torques = np.zeros(self.motor_count) 
         self.q_prev = np.zeros(motor_count, dtype=np.float64)
         self.dq_prev = np.zeros(motor_count, dtype=np.float64)
         self.last_update_time = time.time()
@@ -159,9 +161,13 @@ class ICARM:
             from minimum_gc import MinimumGravityCompensation as GC
 
             self.gc = GC()
-            
+
         # 初始化异步日志管理器
-        self.logger = AsyncLogManager("ic_arm_control_log.jsonl")
+        self.logger = AsyncLogManager(
+            log_dir="/Users/lr-2002/project/instantcreation/IC_arm_control/logs",
+            log_name="ic_arm_control",
+            save_csv=True
+        )
         self.logger.start()
         debug_print("✓ 异步日志系统已启动")
 
@@ -190,39 +196,41 @@ class ICARM:
 
     def _read_motor_state(self, motor_id: int) -> dict:
         """Read state from a single motor using unified interface"""
-        motor = self.motor_manager.get_motor(motor_id)
-        if motor is None:
-            return {"position": 0.0, "velocity": 0.0, "torque": 0.0}
-        return motor.get_state()
+        return self.motor_manager.get_motor(motor_id).get_state()
+
 
     # ========== BATCH READ FUNCTIONS ==========
-
+    # @pysnooper.snoop()
     def _read_all_states(self):
-        """Read all motor states using unified interface"""
-        positions = np.zeros(self.motor_count)
-        velocities = np.zeros(self.motor_count)
-        torques = np.zeros(self.motor_count)
-
+        """Read all motor states using unified interface - optimized version"""
+        # 方案1: 使用批量更新状态
+        self.motor_manager.update_all_states()
+        
+        # 方案2: 优化的循环 - 减少函数调用和字典访问
+        motors = self.motor_manager.motors
         for i in range(self.motor_count):
-            state = self._read_motor_state(i + 1)
-            positions[i] = state["position"]
-            velocities[i] = state["velocity"]
-            torques[i] = state["torque"]
+            motor_id = i + 1
+            motor = motors[motor_id]
+            feedback = motor.feedback
+            self.q[i] = feedback.position
+            self.dq[i] = feedback.velocity  
+            self.tau[i] = feedback.torque
+
             
         # 记录电机状态到日志
         if hasattr(self, 'logger') and self.logger.is_running:
-            self.logger.log_motor_states(positions, velocities, torques)
+            self.logger.log_motor_states(self.q, self.dq, self.tau)
 
-        return positions, velocities, torques
+        return self.q, self.dq, self.tau
 
     # ========== STATE UPDATE FUNCTIONS ==========
-
+    # @pysnooper.snoop()
     def _refresh_all_states(self):
         """Refresh all motor states using unified motor control system"""
         current_time = time.time()
         dt = current_time - self.last_update_time
 
-        self.motor_manager.update_all_states()
+        # 使用最快的读取方法，避免重复的update_all_states调用
         self.q, self.dq, self.tau = self._read_all_states()
 
         if dt > 0 and hasattr(self, "dq_prev"):
@@ -1237,6 +1245,7 @@ class ICARM:
             except Exception as e:
                 debug_print(f"清理资源时出错: {e}", "ERROR")
 
+    # @pysnooper.snoop()
     def monitor_positions_continuous(
         self, update_rate=10.0, duration=None, save_csv=False, csv_filename=None
     ):
@@ -1283,32 +1292,33 @@ class ICARM:
 
         try:
             while True:
-                current_time = time.time()
-                elapsed_time = current_time - start_time
+                # current_time = time.time()
+                # elapsed_time = current_time - start_time
 
-                # 检查是否超过监控时长
-                if duration and elapsed_time >= duration:
-                    print(f"\n监控时长达到 {duration} 秒，自动停止")
-                    break
+                # # 检查是否超过监控时长
+                # if duration and elapsed_time >= duration:
+                #     print(f"\n监控时长达到 {duration} 秒，自动停止")
+                #     break
 
                 # 获取当前状态
                 # self._refresh_all_states_ultra_fast()
                 self._refresh_all_states()
                 try:
-                    positions = self.get_positions_degrees(refresh=True)
+                    positions = self.get_positions_degrees(refresh=False)
                     velocities = self.get_velocities_degrees(
                         refresh=False
                     )  # 使用已刷新的数据
 
                     # 显示位置信息
-                    pos_str = " ".join([f"{pos:6.1f}°" for pos in positions])
-                    vel_str = " ".join([f"{vel:6.1f}°/s" for vel in velocities])
+                    print(positions, velocities)
+                    # pos_str = " ".join([f"{pos:6.1f}°" for pos in positions])
+                    # vel_str = " ".join([f"{vel:6.1f}°/s" for vel in velocities])
 
-                    print(
-                        f"\r[{elapsed_time:6.1f}s] 位置: [{pos_str}] 速度: [{vel_str}]",
-                        end="",
-                        flush=True,
-                    )
+                    # print(
+                    #     f"\r[{elapsed_time:6.1f}s] 位置: [{pos_str}] 速度: [{vel_str}]",
+                    #     end="",
+                    #     flush=True,
+                    # )
 
                     if self.gc_flag:
                         tau = self.cal_gravity()
@@ -1324,7 +1334,7 @@ class ICARM:
                     continue
 
                 # 等待下次更新
-                time.sleep(update_interval)
+                # time.sleep(update_interval)
 
         except KeyboardInterrupt:
             print(f"\n\n用户中断监控 (Ctrl+C)")

@@ -14,6 +14,8 @@ import struct
 import sys
 import os
 
+import pysnooper
+
 # 添加当前目录到Python路径，确保能找到本地模块
 current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
@@ -161,9 +163,6 @@ class DamiaoProtocol(MotorProtocol):
 
     def read_feedback(self, motor_id: int) -> MotorFeedback:
         """读取达妙电机反馈"""
-        if motor_id not in self.motors:
-            return MotorFeedback()  # 电机不存在时返回空反馈
-
         motor = self.motors[motor_id]
         # 刷新电机状态
 
@@ -173,8 +172,8 @@ class DamiaoProtocol(MotorProtocol):
             position=motor.Get_Position(),
             velocity=motor.Get_Velocity(),
             torque=motor.Get_tau(),
-            error_code=0,  # 达妙电机暂时没有错误码，默认为0
-            timestamp=time.time(),
+            # error_code=0,  # 达妙电机暂时没有错误码，默认为0
+            # timestamp=time.time(),
         )
     def set_zero_position(self, motor_id: int) -> bool:
         """设置达妙电机零位"""
@@ -271,21 +270,18 @@ class ServoProtocol(MotorProtocol):
 
     def read_feedback(self, motor_id: int):
         """读取电机反馈"""
-        if motor_id not in self.motor_mapping:
-            return None
-
         servo = self.motor_mapping[motor_id]
 
         # 请求读取状态
-        servo.read_status()
+        # servo.read_status()
 
         # 返回当前状态
         return MotorFeedback(
-            position=servo.get_position(),
-            velocity=servo.get_velocity(),
-            torque=servo.get_torque(),
-            error_code=0,
-            timestamp=time.time()
+            position=servo.position,
+            velocity=servo.velocity,
+            torque=servo.torque,
+            # error_code=0,
+            # timestamp=time.time()
         )
     def set_zero_position(self, motor_id: int) -> bool:
         """设置当前位置为零位"""
@@ -430,20 +426,16 @@ class HTProtocol(MotorProtocol):
 
     def read_feedback(self, motor_id: int) -> MotorFeedback:
         """读取HT电机反馈"""
-        if motor_id not in self.motors:
-            return MotorFeedback()
-
         motor = self.motors[motor_id]
         # 刷新电机状态
         self.ht_manager.refresh_motor_status()
-        time.sleep(0.001)  # 等待反馈
 
         return MotorFeedback(
             position=motor.position,
             velocity=motor.velocity,
             torque=motor.torque,
-            error_code=motor.error,
-            timestamp=time.time(),
+            # error_code=motor.error,
+            # timestamp=time.time(),
         )
     def set_zero_position(self, motor_id: int) -> bool:
         """设置HT电机零位"""
@@ -506,8 +498,10 @@ class UnifiedMotor:
             "timestamp": self.feedback.timestamp,
         }
 
+    @pysnooper.snoop()
     def update_state(self) -> bool:
         """更新状态"""
+        print("update_state", self.motor_id)
         self.feedback = self.protocol.read_feedback(self.motor_id)
         return True
     # 控制接口
@@ -686,6 +680,7 @@ class MotorManager:
         """获取电机实例"""
         return self.motors.get(motor_id)
 
+    # @pysnooper.snoop()
     def update_all_states(self) -> bool:
         """更新所有电机状态"""
         success = True
