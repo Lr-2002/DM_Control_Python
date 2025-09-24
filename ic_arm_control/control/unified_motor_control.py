@@ -508,7 +508,6 @@ class UnifiedMotor:
         self, pos: float, vel: float, kp: float, kd: float, tau: float
     ) -> bool:
         """设置MIT控制命令"""
-        print("set_command", self.motor_id, pos, vel, kp, kd, tau)
         return self.protocol.set_command(self.motor_id, pos, vel, kp, kd, tau)
 
     def enable(self) -> bool:

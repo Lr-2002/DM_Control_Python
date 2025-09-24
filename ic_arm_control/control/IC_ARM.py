@@ -21,10 +21,7 @@ from ic_arm_control.control.unified_motor_control import (
 )
 from ic_arm_control.control.damiao import (
     DmMotorManager,
-    DmActData,
     DM_Motor_Type,
-    Control_Mode,
-    Motor,
     limit_param as dm_limit,
 )
 from ic_arm_control.control.ht_motor import HTMotorManager
@@ -32,6 +29,8 @@ from ic_arm_control.control.servo_motor import ServoMotorManager
 from ic_arm_control.control.src import usb_class
 from ic_arm_control.control.usb_hw_wrapper import USBHardwareWrapper
 from ic_arm_control.control.async_logger import AsyncLogManager
+from ic_arm_control.control.safety_monitor import SafetyMonitor
+from ic_arm_control.control.buffer_control_thread import BufferControlThread
 
 # 电机名称列表（排除servo电机）
 MOTOR_LIST = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8']
@@ -90,11 +89,14 @@ def validate_array(array: np.ndarray, expected_shape: Tuple, name: str) -> bool:
 
 class ICARM:
     def __init__(
-        self, device_sn="F561E08C892274DB09496BCC1102DBC5", debug=False, gc=False
+        self, device_sn="F561E08C892274DB09496BCC1102DBC5", debug=False, gc=False, 
+        enable_buffered_control=False, control_freq=300
     ):
         """Initialize IC ARM with unified motor control system"""
         self.debug = debug
         self.use_ht = True
+        self.enable_buffered_control = enable_buffered_control
+        self.control_freq = control_freq
         debug_print("=== 初始化IC_ARM_Unified ===")
 
         # 初始化统一电机控制系统
@@ -170,6 +172,16 @@ class ICARM:
         )
         self.logger.start()
         debug_print("✓ 异步日志系统已启动")
+        
+        # 初始化缓冲控制组件
+        self.safety_monitor = SafetyMonitor(motor_count=self.motor_count)
+        self.buffer_control_thread = None
+        
+        if self.enable_buffered_control:
+            self.buffer_control_thread = BufferControlThread(self, control_freq=self.control_freq)
+            debug_print(f"✓ 缓冲控制组件已初始化 (频率: {self.control_freq}Hz)")
+        else:
+            debug_print("缓冲控制未启用，使用传统控制模式")
 
     def _validate_internal_state(self):
         """验证内部状态变量的完整性"""
@@ -200,7 +212,7 @@ class ICARM:
 
 
     # ========== BATCH READ FUNCTIONS ==========
-    @pysnooper.snoop()
+    # @pysnooper.snoop()
     def _read_all_states(self, refresh=True):
         """Read all motor states using unified interface - optimized version"""
         # 方案1: 使用批量更新状态
@@ -325,8 +337,8 @@ class ICARM:
         motor_info = self.motor_manager.get_motor_info(motor_id)
         if motor is None:
             return False
-        if motor_id == 7 or motor_id==8 :
-            print("set_command", motor_id, position_rad, velocity_rad_s, motor_info.kp, motor_info.kd, torque_nm)
+        # if motor_id == 7 or motor_id==8 :
+        #     print("set_command", motor_id, position_rad, velocity_rad_s, motor_info.kp, motor_info.kd, torque_nm)
         return motor.set_command(
             position_rad, velocity_rad_s, motor_info.kp, motor_info.kd, torque_nm
         )
@@ -362,7 +374,7 @@ class ICARM:
     def set_joint_positions(
         self, positions_rad, velocities_rad_s=None, torques_nm=None
     ):
-        """Set positions of all joints"""
+        """Set positions of all joints - 支持缓冲控制模式"""
         if velocities_rad_s is None:
             velocities_rad_s = np.zeros(self.motor_count)
         if torques_nm is None:
@@ -376,13 +388,29 @@ class ICARM:
                 np.array(torques_nm)
             )
 
+        # 检查是否启用缓冲控制
+        if (self.enable_buffered_control and 
+            self.buffer_control_thread and 
+            self.buffer_control_thread.is_running()):
+            # 缓冲控制模式：通过控制线程发送，立即返回
+            self.buffer_control_thread.set_target_command(
+                positions=np.array(positions_rad),
+                velocities=np.array(velocities_rad_s),
+                torques=np.array(torques_nm)
+            )
+            return True  # 立即返回，不阻塞
+        else:
+            # 传统控制模式：直接发送到硬件
+            return self._original_set_joint_positions(positions_rad, velocities_rad_s, torques_nm)
+    
+    def _original_set_joint_positions(self, positions_rad, velocities_rad_s, torques_nm):
+        """原始的关节位置设置方法 - 直接发送到硬件"""
         success = True
         for i in range(min(self.motor_count, len(positions_rad))):
             result = self.set_joint_position(
                 i, positions_rad[i], velocities_rad_s[i], torques_nm[i]
             )
             success = success and result
-
         return success
 
     def set_joint_positions_degrees(
@@ -440,6 +468,13 @@ class ICARM:
                 debug_print("All motors enabled successfully")
                 debug_print("Waiting for motors to stabilize...")
                 time.sleep(2)
+                
+                # 启动缓冲控制线程（如果启用）
+                if (self.enable_buffered_control and 
+                    self.buffer_control_thread and 
+                    not self.buffer_control_thread.is_running()):
+                    self.buffer_control_thread.start()
+                    debug_print("✓ 缓冲控制线程已启动")
             else:
                 debug_print("Failed to enable all motors", "ERROR")
             return success
@@ -450,6 +485,13 @@ class ICARM:
     def disable_all_motors(self):
         """Disable all motors using unified interface"""
         debug_print("Disabling all motors...")
+        
+        # 停止缓冲控制线程（如果运行中）
+        if (self.buffer_control_thread and 
+            self.buffer_control_thread.is_running()):
+            self.buffer_control_thread.stop()
+            debug_print("✓ 缓冲控制线程已停止")
+        
         try:
             success = self.motor_manager.disable_all()
             if success:
@@ -464,7 +506,72 @@ class ICARM:
     def emergency_stop(self):
         """Emergency stop - disable all motors immediately"""
         print("EMERGENCY STOP!")
+        
+        # 立即设置安全监控器的紧急停止标志
+        if hasattr(self, 'safety_monitor'):
+            self.safety_monitor.set_emergency_stop(True)
+            
         return self.disable_all_motors()
+
+    # ========== 缓冲控制管理方法 ==========
+    
+    def enable_buffered_control_mode(self):
+        """启用缓冲控制模式"""
+        if not self.enable_buffered_control:
+            print("⚠️  缓冲控制未在初始化时启用")
+            return False
+            
+        if not self.buffer_control_thread:
+            self.buffer_control_thread = BufferControlThread(self, control_freq=self.control_freq)
+            
+        if not self.buffer_control_thread.is_running():
+            success = self.buffer_control_thread.start()
+            if success:
+                debug_print("✅ 缓冲控制模式已启用")
+            return success
+        else:
+            debug_print("缓冲控制模式已在运行")
+            return True
+    
+    def disable_buffered_control_mode(self):
+        """禁用缓冲控制模式"""
+        if (self.buffer_control_thread and 
+            self.buffer_control_thread.is_running()):
+            success = self.buffer_control_thread.stop()
+            if success:
+                debug_print("✅ 缓冲控制模式已禁用")
+            return success
+        else:
+            debug_print("缓冲控制模式未运行")
+            return True
+    
+    def get_buffered_control_status(self) -> dict:
+        """获取缓冲控制状态"""
+        status = {
+            'enabled': self.enable_buffered_control,
+            'running': False,
+            'statistics': None,
+            'safety_status': None
+        }
+        
+        if self.buffer_control_thread:
+            status['running'] = self.buffer_control_thread.is_running()
+            if status['running']:
+                status['statistics'] = self.buffer_control_thread.get_statistics()
+        
+        if hasattr(self, 'safety_monitor'):
+            status['safety_status'] = self.safety_monitor.get_safety_status()
+            
+        return status
+    
+    def reset_emergency_stop(self):
+        """重置紧急停止状态"""
+        if hasattr(self, 'safety_monitor'):
+            self.safety_monitor.set_emergency_stop(False)
+            self.safety_monitor.reset_safety_violations()
+            debug_print("✅ 紧急停止状态已重置")
+            return True
+        return False
 
     def home_to_zero(
         self, speed: float = 0.5, timeout: float = 30.0, frequency=100
@@ -1465,11 +1572,20 @@ class ICARM:
     def close(self):
         """Close the connection and cleanup"""
         try:
+            # 停止缓冲控制线程
+            if (hasattr(self, 'buffer_control_thread') and 
+                self.buffer_control_thread and 
+                self.buffer_control_thread.is_running()):
+                self.buffer_control_thread.stop()
+                debug_print("✓ 缓冲控制线程已关闭")
+            
+            # 停止日志系统
             if hasattr(self, 'logger') and self.logger.is_running:
                 self.logger.stop()
                 debug_print("✓ 日志系统已关闭")
+                
+            # 禁用所有电机
             self.disable_all_motors()
-            # 关闭日志管理器
 
             # No need to close serial_device in unified motor control system
             print("ICARM connection closed")
