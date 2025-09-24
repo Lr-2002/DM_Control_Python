@@ -73,7 +73,7 @@ def interactive_main():
 
     arm = ICARM(debug=False, gc=False)
     arm.monitor_positions_continuous(
-        update_rate=100,
+        update_rate=500,
         duration=None,
         save_csv=False,
         csv_filename=None,

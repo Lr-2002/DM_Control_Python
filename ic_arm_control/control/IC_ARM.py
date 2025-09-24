@@ -31,6 +31,7 @@ from ic_arm_control.control.ht_motor import HTMotorManager
 from ic_arm_control.control.servo_motor import ServoMotorManager
 from ic_arm_control.control.src import usb_class
 from ic_arm_control.control.usb_hw_wrapper import USBHardwareWrapper
+from ic_arm_control.control.async_logger import AsyncLogManager
 
 # 电机名称列表（排除servo电机）
 MOTOR_LIST = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8']
@@ -158,6 +159,11 @@ class ICARM:
             from minimum_gc import MinimumGravityCompensation as GC
 
             self.gc = GC()
+            
+        # 初始化异步日志管理器
+        self.logger = AsyncLogManager("ic_arm_control_log.jsonl")
+        self.logger.start()
+        debug_print("✓ 异步日志系统已启动")
 
     def _validate_internal_state(self):
         """验证内部状态变量的完整性"""
@@ -202,6 +208,10 @@ class ICARM:
             positions[i] = state["position"]
             velocities[i] = state["velocity"]
             torques[i] = state["torque"]
+            
+        # 记录电机状态到日志
+        if hasattr(self, 'logger') and self.logger.is_running:
+            self.logger.log_motor_states(positions, velocities, torques)
 
         return positions, velocities, torques
 
@@ -355,6 +365,14 @@ class ICARM:
             velocities_rad_s = np.zeros(self.motor_count)
         if torques_nm is None:
             torques_nm = np.zeros(self.motor_count)
+            
+        # 记录关节命令到日志
+        if hasattr(self, 'logger') and self.logger.is_running:
+            self.logger.log_joint_command(
+                np.array(positions_rad), 
+                np.array(velocities_rad_s), 
+                np.array(torques_nm)
+            )
 
         success = True
         for i in range(min(self.motor_count, len(positions_rad))):
@@ -1296,16 +1314,7 @@ class ICARM:
                         tau = self.cal_gravity()
                         # tau = self.cal_gravity_coriolis()
                         print(tau)
-                    # 保存到CSV
-                    if save_csv and csv_writer:
-                        timestamp = datetime.now().isoformat()
-                        row = (
-                            [timestamp, elapsed_time]
-                            + list(positions)
-                            + list(velocities)
-                        )
-                        csv_writer.writerow(row)
-                        csv_file.flush()  # 确保数据写入
+
 
                 except Exception as e:
                     print(f"\n读取状态时出错: {e}")
@@ -1330,7 +1339,6 @@ class ICARM:
     def get_velocities_degrees(self, refresh=True):
         """
         获取所有关节速度 (度/秒)
-
         Args:
             refresh: 是否刷新状态
 
@@ -1455,6 +1463,10 @@ class ICARM:
         """Close the connection and cleanup"""
         try:
             self.disable_all_motors()
+            # 关闭日志管理器
+            if hasattr(self, 'logger') and self.logger.is_running:
+                self.logger.stop()
+                debug_print("✓ 日志系统已关闭")
             # No need to close serial_device in unified motor control system
             print("ICARM connection closed")
         except Exception as e:
