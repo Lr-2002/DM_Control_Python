@@ -230,9 +230,14 @@ class ICARM:
             self.tau[i] = feedback.torque
 
             
-        # 记录电机状态到日志
+        # 记录电机状态到日志 (采样记录，避免过多日志)
         if hasattr(self, 'logger') and self.logger.is_running:
-            self.logger.log_motor_states(self.q, self.dq, self.tau)
+            # 每10次读取记录一次日志，减少日志量
+            if not hasattr(self, '_log_counter'):
+                self._log_counter = 0
+            self._log_counter += 1
+            if self._log_counter % 10 == 0:
+                self.logger.log_motor_states(self.q, self.dq, self.tau)
 
         return self.q, self.dq, self.tau
 
@@ -261,7 +266,6 @@ class ICARM:
         """Get joint positions in radians - 返回内部维护的位置状态"""
         if refresh:
             self._refresh_all_states()  # 更新内部状态变量
-        self._read_all_states(refresh=False)
         return self.q.copy()  # 返回内部维护的位置副本
 
     def get_joint_velocities(self, refresh=True):
