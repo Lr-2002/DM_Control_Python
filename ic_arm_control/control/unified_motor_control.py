@@ -498,10 +498,9 @@ class UnifiedMotor:
             "timestamp": self.feedback.timestamp,
         }
 
-    @pysnooper.snoop()
+    # @pysnooper.snoop()
     def update_state(self) -> bool:
         """更新状态"""
-        print("update_state", self.motor_id)
         self.feedback = self.protocol.read_feedback(self.motor_id)
         return True
     # 控制接口

@@ -34,19 +34,32 @@ class AsyncLogManager:
         self.save_json = save_json
         self.save_csv = save_csv
         
-        # 生成时间戳文件名
+        # 生成时间戳文件夹名
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.session_dir = self.log_dir / self.timestamp
         
-        self.json_file_path = self.log_dir / f"{log_name}_{self.timestamp}.jsonl" if save_json else None
-        self.csv_file_path = self.log_dir / f"{log_name}_{self.timestamp}.csv" if save_csv else None
+        # 创建时间戳文件夹
+        self.session_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 分别为state和command创建文件路径
+        if save_json:
+            self.json_state_file = self.session_dir / "motor_states.jsonl"
+            self.json_command_file = self.session_dir / "joint_commands.jsonl"
+        else:
+            self.json_state_file = None
+            self.json_command_file = None
+            
+        if save_csv:
+            self.csv_state_file = self.session_dir / "motor_states.csv"
+            self.csv_command_file = self.session_dir / "joint_commands.csv"
+        else:
+            self.csv_state_file = None
+            self.csv_command_file = None
         
         self.log_queue = queue.Queue(maxsize=max_queue_size)
         self.worker_thread = None
         self.stop_event = threading.Event()
         self.is_running = False
-        
-        # 确保日志目录存在
-        self.log_dir.mkdir(parents=True, exist_ok=True)
         
         # 性能统计
         self.total_logs = 0
@@ -63,11 +76,11 @@ class AsyncLogManager:
             self.worker_thread.start()
             self.is_running = True
             files_info = []
-            if self.json_file_path:
-                files_info.append(f"JSON: {self.json_file_path}")
-            if self.csv_file_path:
-                files_info.append(f"CSV: {self.csv_file_path}")
-            print(f"[AsyncLogManager] 日志系统已启动，{', '.join(files_info)}")
+            if self.json_state_file:
+                files_info.append(f"JSON: {self.session_dir}/motor_states.jsonl & joint_commands.jsonl")
+            if self.csv_state_file:
+                files_info.append(f"CSV: {self.session_dir}/motor_states.csv & joint_commands.csv")
+            print(f"[AsyncLogManager] 日志系统已启动，会话目录: {self.session_dir}")
             
     def stop(self):
         """停止异步日志线程"""
@@ -154,30 +167,25 @@ class AsyncLogManager:
             "total_logs": self.total_logs,
             "dropped_logs": self.dropped_logs,
             "queue_size": self.log_queue.qsize(),
-            "json_file": str(self.json_file_path) if self.json_file_path else None,
-            "csv_file": str(self.csv_file_path) if self.csv_file_path else None
+            "session_dir": str(self.session_dir),
+            "json_enabled": self.save_json,
+            "csv_enabled": self.save_csv
         }
             
     def _log_worker(self):
         """后台日志写入线程"""
-        json_file = None
+        json_files = {}
         csv_files = {}
         
         try:
-            # 打开JSON文件
-            if self.save_json and self.json_file_path:
-                json_file = open(self.json_file_path, 'a', encoding='utf-8')
-                
             while not self.stop_event.is_set():
                 try:
                     # 等待日志条目，超时检查停止信号
                     log_entry = self.log_queue.get(timeout=0.1)
                     
                     # 写入JSON文件
-                    if json_file:
-                        json_line = json.dumps(log_entry, ensure_ascii=False)
-                        json_file.write(json_line + '\n')
-                        json_file.flush()
+                    if self.save_json:
+                        self._write_json_entry(log_entry, json_files)
                     
                     # 写入CSV文件
                     if self.save_csv:
@@ -195,9 +203,8 @@ class AsyncLogManager:
                 try:
                     log_entry = self.log_queue.get_nowait()
                     
-                    if json_file:
-                        json_line = json.dumps(log_entry, ensure_ascii=False)
-                        json_file.write(json_line + '\n')
+                    if self.save_json:
+                        self._write_json_entry(log_entry, json_files)
                     
                     if self.save_csv:
                         self._write_csv_entry(log_entry, csv_files)
@@ -212,25 +219,66 @@ class AsyncLogManager:
             print(f"[AsyncLogManager] 日志文件操作失败: {e}")
         finally:
             # 关闭所有文件
-            if json_file:
-                json_file.close()
+            for json_file in json_files.values():
+                if json_file:
+                    json_file.close()
             for csv_file in csv_files.values():
                 if csv_file:
                     csv_file.close()
     
-    def _write_csv_entry(self, log_entry: dict, csv_files: dict):
-        """写入CSV条目"""
+    def _write_json_entry(self, log_entry: dict, json_files: dict):
+        """写入JSON条目到对应文件"""
         log_type = log_entry.get('type')
-        if not log_type or not self.csv_file_path:
+        if not log_type:
             return
             
         try:
-            # 为不同类型的日志创建不同的CSV文件
-            csv_file_path = self.log_dir / f"{self.log_name}_{log_type}_{self.timestamp}.csv"
+            # 根据日志类型选择文件
+            if log_type == 'motor_states':
+                file_path = self.json_state_file
+            elif log_type == 'joint_command':
+                file_path = self.json_command_file
+            else:
+                # 其他类型的日志写入state文件
+                file_path = self.json_state_file
+                
+            if not file_path:
+                return
+                
+            # 如果文件还没有打开，则打开它
+            if log_type not in json_files:
+                json_files[log_type] = open(file_path, 'a', encoding='utf-8')
+                
+            json_file = json_files[log_type]
+            json_line = json.dumps(log_entry, ensure_ascii=False)
+            json_file.write(json_line + '\n')
+            json_file.flush()
+            
+        except Exception as e:
+            print(f"[AsyncLogManager] JSON写入错误: {e}")
+    
+    def _write_csv_entry(self, log_entry: dict, csv_files: dict):
+        """写入CSV条目"""
+        log_type = log_entry.get('type')
+        if not log_type:
+            return
+            
+        try:
+            # 根据日志类型选择文件
+            if log_type == 'motor_states':
+                file_path = self.csv_state_file
+            elif log_type == 'joint_command':
+                file_path = self.csv_command_file
+            else:
+                # 其他类型的日志写入state文件
+                file_path = self.csv_state_file
+                
+            if not file_path:
+                return
             
             # 如果该类型的CSV文件还没有打开，则打开它
             if log_type not in csv_files:
-                csv_files[log_type] = open(csv_file_path, 'w', newline='', encoding='utf-8')
+                csv_files[log_type] = open(file_path, 'w', newline='', encoding='utf-8')
                 
             csv_file = csv_files[log_type]
             

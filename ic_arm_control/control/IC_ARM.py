@@ -200,11 +200,12 @@ class ICARM:
 
 
     # ========== BATCH READ FUNCTIONS ==========
-    # @pysnooper.snoop()
-    def _read_all_states(self):
+    @pysnooper.snoop()
+    def _read_all_states(self, refresh=True):
         """Read all motor states using unified interface - optimized version"""
         # 方案1: 使用批量更新状态
-        self.motor_manager.update_all_states()
+        if refresh:
+            self.motor_manager.update_all_states()
         
         # 方案2: 优化的循环 - 减少函数调用和字典访问
         motors = self.motor_manager.motors
@@ -227,20 +228,12 @@ class ICARM:
     # @pysnooper.snoop()
     def _refresh_all_states(self):
         """Refresh all motor states using unified motor control system"""
-        current_time = time.time()
-        dt = current_time - self.last_update_time
 
         # 使用最快的读取方法，避免重复的update_all_states调用
         self.q, self.dq, self.tau = self._read_all_states()
-
-        if dt > 0 and hasattr(self, "dq_prev"):
-            self.ddq = (self.dq - self.dq_prev) / dt
-
         self.currents = self.tau / 0.1
 
-        self.q_prev = self.q.copy()
-        self.dq_prev = self.dq.copy()
-        self.last_update_time = current_time
+        self.last_update_time = time.time()
 
     def _refresh_all_states_fast(self):
         """快速状态刷新"""
@@ -256,6 +249,7 @@ class ICARM:
         """Get joint positions in radians - 返回内部维护的位置状态"""
         if refresh:
             self._refresh_all_states()  # 更新内部状态变量
+        self._read_all_states(refresh=False)
         return self.q.copy()  # 返回内部维护的位置副本
 
     def get_joint_velocities(self, refresh=True):
@@ -591,15 +585,14 @@ class ICARM:
                     return False
 
                 # 显示进度
-                if i % (num_steps // 10) == 0 or i == num_steps:
-                    current_pos = self.get_joint_positions(refresh=False)
-                    if current_pos is not None:
-                        # 只检查前8个电机的误差
-                        control_pos = current_pos[:num_control_motors]
-                        max_error = max(abs(pos) for pos in control_pos)
-                        debug_print(
-                            f"回零进度: {progress * 100:.0f}%, 最大偏差: {np.degrees(max_error):.2f}° (前{num_control_motors}个电机)"
-                        )
+                current_pos = self.get_joint_positions(refresh=False)
+                if current_pos is not None:
+                    # 只检查前8个电机的误差
+                    control_pos = current_pos[:num_control_motors]
+                    max_error = max(abs(pos) for pos in control_pos)
+                    debug_print(
+                        f"回零进度: {progress * 100:.0f}%, 最大偏差: {np.degrees(max_error):.2f}° (前{num_control_motors}个电机)"
+                    )
 
                 # 等待下一步
                 if i < num_steps:
@@ -1472,11 +1465,12 @@ class ICARM:
     def close(self):
         """Close the connection and cleanup"""
         try:
-            self.disable_all_motors()
-            # 关闭日志管理器
             if hasattr(self, 'logger') and self.logger.is_running:
                 self.logger.stop()
                 debug_print("✓ 日志系统已关闭")
+            self.disable_all_motors()
+            # 关闭日志管理器
+
             # No need to close serial_device in unified motor control system
             print("ICARM connection closed")
         except Exception as e:
