@@ -34,7 +34,7 @@ class MuJoCoICARMSimulation:
 			current_dir = os.path.dirname(os.path.abspath(__file__))
 			# urdf_path = os.path.join(current_dir, 'ic_arm_urdf', 'urdf', 'ic1.1.2.urdf')
 			# urdf_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/robot/urdf/robot.urdf"
-			urdf_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/robot_8dof/urdf/robot_8dof.urdf"
+			urdf_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/urdfs/ic_arm_8_dof/urdf/ic_arm_8_dof.urdf"
 		self.urdf_path = urdf_path
 		
 		# Initialize IC ARM connection
@@ -140,38 +140,15 @@ class MuJoCoICARMSimulation:
 
 	
 	def read_ic_arm_positions(self):
-		"""Read current joint positions from IC ARM"""
-		if self.ic_arm is None:
-			# Return dummy data if no hardware connection
-			return {
-				'm1': {'rad': 0.0, 'deg': 0.0},
-				'm2': {'rad': 0.0, 'deg': 0.0},
-				'm3': {'rad': 0.0, 'deg': 0.0},
-				'm4': {'rad': 0.0, 'deg': 0.0},
-				'm5': {'rad': 0.0, 'deg': 0.0},
-				'm6': {'rad': 0.0, 'deg': 0.0}
-			}
-		
-		try:
-			# 直接读取每个电机的位置，确保获取最新数据
-			positions = {}
-			motor_names = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6']
-			
-			for motor_name in motor_names:
-				try:
-					# 直接调用 _read_motor_position_raw 确保获取最新位置
-					rad_value = self.ic_arm._read_motor_position_raw(motor_name)
-					deg_value = float(np.degrees(rad_value))
-					positions[motor_name] = {'rad': rad_value, 'deg': deg_value}
-					print(f"  {motor_name}: {deg_value:.2f}° ({rad_value:.4f} rad)")
-				except Exception as e:
-					print(f"  Error reading {motor_name}: {e}")
-					positions[motor_name] = {'rad': 0.0, 'deg': 0.0}
-			
-			return positions
-		except Exception as e:
-			print(f"Error reading IC ARM positions: {e}")
-			return {}
+		# 直接读取每个电机的位置，确保获取最新数据
+		positions = {}
+		motor_names = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6']
+		rad_list = self.ic_arm.get_joint_positions(refresh=True)
+		deg_list = np.degrees(rad_list)
+		for i in range(len(motor_names)):
+			positions[motor_names[i]] = {'rad': rad_list[i], 'deg': deg_list[i]}
+		return positions
+
 	
 	def sync_positions_to_mujoco(self, ic_arm_positions):
 		"""Sync IC ARM positions to MuJoCo simulation"""
@@ -205,6 +182,7 @@ class MuJoCoICARMSimulation:
 		# Read positions from IC ARM
 		ic_arm_positions = self.read_ic_arm_positions()
 		
+		print('read positions from ic_arm is ', ic_arm_positions)
 		# Sync positions to MuJoCo
 		self.sync_positions_to_mujoco(ic_arm_positions)
 		

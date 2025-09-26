@@ -357,9 +357,46 @@ class MotorLogAnalyzer:
         return report
 
 
-def main():
-    """主函数示例"""
-    log_dir = "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250924_202512"
+def find_latest_log_dir(base_log_dir: str = "/Users/lr-2002/project/instantcreation/IC_arm_control/logs") -> str:
+    """
+    自动找到最新的日志目录
+    
+    Args:
+        base_log_dir: 日志基础目录
+    
+    Returns:
+        latest_log_dir: 最新的日志目录路径
+    """
+    import glob
+    
+    if not os.path.exists(base_log_dir):
+        raise FileNotFoundError(f"日志基础目录不存在: {base_log_dir}")
+    
+    # 查找所有日志目录（格式：YYYYMMDD_HHMMSS）
+    log_pattern = os.path.join(base_log_dir, "????????_??????")
+    log_dirs = glob.glob(log_pattern)
+    
+    if not log_dirs:
+        raise FileNotFoundError(f"在 {base_log_dir} 中没有找到日志目录")
+    
+    # 按目录名排序，最新的在最后
+    log_dirs.sort()
+    latest_log_dir = log_dirs[-1]
+    
+    print(f"自动选择最新日志目录: {os.path.basename(latest_log_dir)}")
+    return latest_log_dir
+
+def main(log_dir: str = None):
+    """
+    主函数
+    
+    Args:
+        log_dir: 指定的日志目录，如果为None则自动选择最新的
+    """
+    if log_dir is None:
+        log_dir = find_latest_log_dir()
+    
+    print(f"分析日志目录: {log_dir}")
     
     # 创建分析器
     analyzer = MotorLogAnalyzer(log_dir, alignment_threshold_ms=15)
@@ -367,10 +404,21 @@ def main():
     # 运行完整分析
     report = analyzer.run_complete_analysis()
     
-    # 打印报告摘要
-    print("\n=== 分析报告摘要 ===")
-    print(report[:1000] + "..." if len(report) > 1000 else report)
+    # 打印完整报告
+    print("\n=== 完整分析报告 ===")
+    print(report)
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    
+    # 支持命令行参数
+    if len(sys.argv) > 1:
+        # 使用指定的日志目录
+        specified_log_dir = sys.argv[1]
+        print(f"使用指定的日志目录: {specified_log_dir}")
+        main(specified_log_dir)
+    else:
+        # 自动选择最新的日志目录
+        print("未指定日志目录，自动选择最新的...")
+        main()
