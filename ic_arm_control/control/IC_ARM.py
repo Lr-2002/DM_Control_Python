@@ -107,13 +107,13 @@ class ICARM:
         # 电机配置数据
         self.motors_data = [
             MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 80, 1.5),
-            MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x02, 0x12, 40, 1.2),
-            MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 50, 1.2),
+            MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x02, 0x12, 40, 1.2),
+            MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 60, 1.5),
             MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 40, 1),
             MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 40, 1),
             MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 30, 1),
-            MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 20, 0.8),
-            MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 20, 0.8),
+            MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 8, 1.2),
+            MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 8, 1.2),
             MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0),
         ]
 
@@ -160,9 +160,11 @@ class ICARM:
         # 重力补偿初始化
         self.gc_flag = gc
         if self.gc_flag:
-            from minimum_gc import MinimumGravityCompensation as GC
+            from utils.static_gc import StaticGravityCompensation
+            self.gc = StaticGravityCompensation()
+            # from minimum_gc import MinimumGravityCompensation as GC
 
-            self.gc = GC()
+            # self.gc = GC()
 
         # 初始化异步日志管理器
         self.logger = AsyncLogManager(
@@ -230,14 +232,9 @@ class ICARM:
             self.tau[i] = feedback.torque
 
             
-        # 记录电机状态到日志 (采样记录，避免过多日志)
+        # 记录电机状态到日志
         if hasattr(self, 'logger') and self.logger.is_running:
-            # 每10次读取记录一次日志，减少日志量
-            if not hasattr(self, '_log_counter'):
-                self._log_counter = 0
-            self._log_counter += 1
-            if self._log_counter % 10 == 0:
-                self.logger.log_motor_states(self.q, self.dq, self.tau)
+            self.logger.log_motor_states(self.q, self.dq, self.tau)
 
         return self.q, self.dq, self.tau
 
@@ -474,11 +471,14 @@ class ICARM:
                 time.sleep(2)
                 
                 # 启动缓冲控制线程（如果启用）
-                if (self.enable_buffered_control and 
-                    self.buffer_control_thread and 
-                    not self.buffer_control_thread.is_running()):
-                    self.buffer_control_thread.start()
-                    debug_print("✓ 缓冲控制线程已启动")
+                if self.enable_buffered_control:
+                    if not hasattr(self, 'buffer_control_thread') or self.buffer_control_thread is None:
+                        self.buffer_control_thread = BufferControlThread(self, control_freq=self.control_freq)
+                        debug_print("✓ 缓冲控制线程已创建")
+                    
+                    if not self.buffer_control_thread.is_running():
+                        self.buffer_control_thread.start()
+                        debug_print("✓ 缓冲控制线程已启动")
             else:
                 debug_print("Failed to enable all motors", "ERROR")
             return success
@@ -491,7 +491,8 @@ class ICARM:
         debug_print("Disabling all motors...")
         
         # 停止缓冲控制线程（如果运行中）
-        if (self.buffer_control_thread and 
+        if (hasattr(self, 'buffer_control_thread') and 
+            self.buffer_control_thread and 
             self.buffer_control_thread.is_running()):
             self.buffer_control_thread.stop()
             debug_print("✓ 缓冲控制线程已停止")
@@ -1396,8 +1397,8 @@ class ICARM:
 
         try:
             while True:
-                # current_time = time.time()
-                # elapsed_time = current_time - start_time
+                current_time = time.time()
+                elapsed_time = current_time - start_time
 
                 # # 检查是否超过监控时长
                 # if duration and elapsed_time >= duration:
@@ -1414,15 +1415,15 @@ class ICARM:
                     )  # 使用已刷新的数据
 
                     # 显示位置信息
-                    print(positions, velocities)
-                    # pos_str = " ".join([f"{pos:6.1f}°" for pos in positions])
-                    # vel_str = " ".join([f"{vel:6.1f}°/s" for vel in velocities])
+                    # print(positions, velocities)
+                    pos_str = " ".join([f"{pos:6.1f}°" for pos in positions])
+                    vel_str = " ".join([f"{vel:6.1f}°/s" for vel in velocities])
 
-                    # print(
-                    #     f"\r[{elapsed_time:6.1f}s] 位置: [{pos_str}] 速度: [{vel_str}]",
-                    #     end="",
-                    #     flush=True,
-                    # )
+                    print(
+                        f"\r[{elapsed_time:6.1f}s] 位置: [{pos_str}] 速度: [{vel_str}]",
+                        end="",
+                        flush=True,
+                    )
 
                     if self.gc_flag:
                         tau = self.cal_gravity()
