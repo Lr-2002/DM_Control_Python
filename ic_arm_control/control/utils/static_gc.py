@@ -1,4 +1,4 @@
-import numpy 
+import numpy as np 
 class StaticGravityCompensation:
     def __init__(self):
         self.torque = np.array([4, 0, 4, 0, 1, 0, 0, 0, 0])

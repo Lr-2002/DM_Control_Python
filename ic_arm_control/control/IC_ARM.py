@@ -1525,52 +1525,74 @@ class ICARM:
     # ========== TRAJECTORY EXECUTION ==========
 
     def execute_trajectory_points(self, trajectory_points, verbose=True):
-        """Execute a trajectory given as a list of points"""
+        """
+        Execute a trajectory given as a list of points
+        
+        Args:
+            trajectory_points: List of points, each point is [pos1_deg, pos2_deg, ..., posN_deg, timestamp]
+            verbose: Whether to print progress information
+            
+        Returns:
+            bool: True if execution successful, False otherwise
+        """
         if not trajectory_points:
-            print("Empty trajectory")
+            if verbose:
+                print("Empty trajectory")
             return False
 
-        print(f"Executing trajectory with {len(trajectory_points)} points...")
+        num_points = len(trajectory_points)
+        if verbose:
+            print(f"执行轨迹: {num_points} 个轨迹点")
+            print("启用所有电机...")
+        
         self.enable_all_motors()
-
         start_time = time.time()
+        success = True
 
         try:
             for i, point in enumerate(trajectory_points):
-                if len(point) < 6:  # Need 5 positions + 1 timestamp
-                    print(f"Invalid point at index {i}: {point}")
+                # 验证轨迹点格式
+                if len(point) < 2:  # 至少需要1个位置 + 1个时间戳
+                    if verbose:
+                        print(f"无效轨迹点 {i}: {point}")
                     continue
 
-                target_positions_deg = point[:5]
-                target_time = point[5]
-                # Wait for target time
-                while (time.time() - start_time) < target_time:
+                # 提取位置和时间
+                target_positions_deg = point[:-1]  # 除最后一个时间戳外的所有位置
+                target_time = point[-1]  # 最后一个元素是时间戳
+                
+                # 等待到目标时间
+                current_time = time.time() - start_time
+                while current_time < target_time:
                     time.sleep(0.001)
+                    current_time = time.time() - start_time
 
-                # Send commands
+                # 发送位置命令
                 self.set_joint_positions_degrees(target_positions_deg)
-
-                # Progress reporting
-                if verbose and i % 10 == 0:
-                    progress = (i / len(trajectory_points)) * 100
-                    current_pos = self.get_positions_degrees()
-                    print(
-                        f"Progress: {progress:.1f}% | Target: {[f'{p:.1f}' for p in target_positions_deg]} | "
-                        f"Actual: {[f'{p:.1f}' for p in current_pos]}"
-                    )
+                # 进度报告
+                self.get_joint_positions()
+                if verbose and i % 50 == 0:  # 减少输出频率
+                    progress = (i / num_points) * 100
+                    print(f"执行进度: {progress:.1f}% ({i}/{num_points})")
 
         except KeyboardInterrupt:
-            print("\nTrajectory interrupted")
+            if verbose:
+                print("\n轨迹执行被用户中断")
+            success = False
         except Exception as e:
-            print(f"Trajectory execution error: {e}")
+            if verbose:
+                print(f"轨迹执行错误: {e}")
+            success = False
         finally:
+            if verbose:
+                print("禁用所有电机...")
             self.disable_all_motors()
 
-        final_pos = self.get_positions_degrees()
-        print(
-            f"Trajectory execution completed. Final position: {[f'{p:.2f}°' for p in final_pos]}"
-        )
-        return final_pos
+        if verbose:
+            final_pos = self.get_positions_degrees()
+            print(f"轨迹执行完成. 最终位置: {[f'{p:.1f}°' for p in final_pos]}")
+        
+        return success
 
     # ========== CLEANUP ==========
 

@@ -1476,8 +1476,15 @@ def main():
 	"""主函数 - 生成各种类型的轨迹"""
 	print("=== IC ARM 动力学辨识轨迹生成器 (安全增强版) ===\n")
 	
+	# 从配置文件获取URDF路径
+	from ic_arm_control.utils.config_loader import get_urdf_path
+	urdf_path = get_urdf_path()
+	print(f"使用URDF文件: {urdf_path}")
+	
+	# 控制是否绘图的标志
+	enable_plotting = False  # 设置为False禁用绘图
+	
 	# 初始化轨迹生成器 - 使用URDF文件
-	urdf_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/robot_8dof/urdf/robot_8dof_updated.urdf"
 	generator = TrajectoryGenerator(urdf_path=urdf_path)
 	
 	# 从URDF自动生成电机配置
@@ -1532,7 +1539,7 @@ def main():
 		freq_range=[0.05, 0.5]
 	)  # 从0.05Hz扫到0.5Hz
 	generator.save_trajectory(chirp_traj, "trajectory_chirp_sweep.json")
-	generator.plot_trajectory(chirp_traj, "Chirp Sweep Trajectory (0.05-0.5Hz)")
+	# generator.plot_trajectory(chirp_traj, "Chirp Sweep Trajectory (0.05-0.5Hz)")
 	
 	print("\n3. 生成随机轨迹...")
 	random_traj = generator.generate_random_trajectory(
@@ -1542,7 +1549,7 @@ def main():
 		seed=42
 	)
 	generator.save_trajectory(random_traj, "trajectory_random_bandlimited.json")
-	generator.plot_trajectory(random_traj, "Random Band-Limited Trajectory (0.3Hz BW)")
+	# generator.plot_trajectory(random_traj, "Random Band-Limited Trajectory (0.3Hz BW)")
 	
 	print("\n4. 生成相位偏移轨迹...")
 	phase_shifted_traj = generator.generate_phase_shifted_trajectory(
@@ -1551,7 +1558,8 @@ def main():
 		base_freq=0.1  # 0.1Hz基频，各电机相位偏移72°
 	)
 	generator.save_trajectory(phase_shifted_traj, "trajectory_phase_shifted.json")
-	generator.plot_trajectory(phase_shifted_traj, "Phase-Shifted Trajectory (72° shifts)")
+	if enable_plotting:
+		generator.plot_trajectory(phase_shifted_traj, "Phase-Shifted Trajectory (72° shifts)")
 	
 	print("\n5. 生成多谐波轨迹...")
 	harmonic_traj = generator.generate_multi_harmonic_trajectory(
@@ -1560,7 +1568,8 @@ def main():
 		fundamental_freq=0.08  # 0.08Hz基频 + 不同谐波组合
 	)
 	generator.save_trajectory(harmonic_traj, "trajectory_multi_harmonic.json")
-	generator.plot_trajectory(harmonic_traj, "Multi-Harmonic Trajectory")
+	if enable_plotting:
+		generator.plot_trajectory(harmonic_traj, "Multi-Harmonic Trajectory")
 	
 	# 6. 生成不同参数的扫频轨迹
 	print("\n6. 生成高频扫频轨迹...")
@@ -1594,14 +1603,10 @@ def main():
 	
 	# 9. 生成原有的序列和同时轨迹
 	print("\n9. 生成序列轨迹...")
-	trajectory_files = [
-		"trajectory_motor_1_single_safe.json",
-		"trajectory_motor_6_single_safe.json", 
-		"trajectory_motor_5_single_safe.json",
-		"trajectory_motor_4_single_safe.json",
-		"trajectory_motor_3_single_safe.json",
-		"trajectory_motor_2_single_safe.json"
-	]
+	# 动态生成轨迹文件列表，基于实际检测到的电机数量
+	trajectory_files = []
+	for motor_id in range(1, generator.num_motors + 1):
+		trajectory_files.append(f"trajectory_motor_{motor_id}_single_safe.json")
 	
 	concatenated_traj = generator.concatenate_trajectories_sequential(
 		trajectory_files=trajectory_files,
@@ -1664,7 +1669,7 @@ def test_safety_features():
 	print("=== 安全功能测试 ===\n")
 	
 	# 初始化带URDF的生成器（自动检测关节数量）
-	urdf_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/robot_8dof/urdf/robot_8dof_updated.urdf"
+	urdf_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/urdfs/ic_arm_8_dof/urdf/ic_arm_8_dof.urdf"
 	generator = TrajectoryGenerator(urdf_path=urdf_path)
 	
 	print("\n1. 测试关节限制约束...")
