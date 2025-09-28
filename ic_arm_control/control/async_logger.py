@@ -94,11 +94,14 @@ class AsyncLogManager:
     def log_motor_states(self, positions: np.ndarray, velocities: np.ndarray, torques: np.ndarray):
         """
         记录电机状态 - 非阻塞
-        
+
         Args:
             positions: 电机位置数组
-            velocities: 电机速度数组  
+            velocities: 电机速度数组
             torques: 电机力矩数组
+
+        Returns:
+            bool: 是否成功记录日志
         """
         try:
             log_entry = {
@@ -112,9 +115,15 @@ class AsyncLogManager:
             }
             self.log_queue.put_nowait(log_entry)
             self.total_logs += 1
+            return True
         except queue.Full:
             # 队列满时静默丢弃，避免阻塞主线程
             self.dropped_logs += 1
+            return False
+        except Exception as e:
+            # 其他错误也返回False
+            print(f"[LOGGER_ERROR] 记录电机状态失败: {e}")
+            return False
             
     def log_joint_command(self, positions_rad: np.ndarray, velocities_rad_s: np.ndarray, torques_nm: np.ndarray):
         """

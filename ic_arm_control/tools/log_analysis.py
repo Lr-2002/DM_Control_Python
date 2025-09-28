@@ -23,7 +23,7 @@ class MotorLogAnalyzer:
         self.target_data = None
         self.state_data = None
         self.aligned_data = None
-        self.motor_count = 9  # 根据CSV数据结构确定
+        self.motor_count = 9  # 初始值，会在load_data中动态调整
         
     def load_data(self) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
@@ -38,20 +38,219 @@ class MotorLogAnalyzer:
         if not os.path.exists(target_file) or not os.path.exists(state_file):
             raise FileNotFoundError(f"日志文件不存在: {target_file} 或 {state_file}")
         
-        # 读取目标数据
-        self.target_data = pd.read_csv(target_file)
-        self.target_data['timestamp'] = pd.to_datetime(self.target_data['timestamp'])
+        # 读取目标数据 - 处理格式错误的问题
+        print(f"正在读取目标数据文件: {target_file}")
+        
+        # 先检查文件的实际格式
+        with open(target_file, 'r') as f:
+            first_line = f.readline().strip()
+            second_line = f.readline().strip()
+            print(f"CSV头部: {first_line}")
+            print(f"第一行数据: {second_line[:100]}...")
+        
+        # 检查是否是格式错误的CSV（数据都在第一列）
+        if ' ' in second_line and ',' not in second_line.split(',')[0]:
+            print("检测到CSV格式错误：数据被写入了单个列中")
+            print("尝试修复CSV格式...")
+            self._fix_malformed_csv(target_file)
+        
+        # 检查CSV文件的字段数匹配问题
+        with open(target_file, 'r') as f:
+            header_line = f.readline().strip()
+            data_line = f.readline().strip()
+            header_fields = len(header_line.split(','))
+            data_fields = len(data_line.split(','))
+            
+            print(f"CSV字段数检查: 头部={header_fields}, 数据={data_fields}")
+            
+            if header_fields != data_fields:
+                print(f"警告: CSV字段数不匹配! 头部有{header_fields}个字段，数据有{data_fields}个字段")
+                print("这会导致pandas读取错误，尝试修复...")
+                
+                # 使用数据行的字段数来读取，忽略头部不匹配的问题
+                try:
+                    self.target_data = pd.read_csv(target_file, header=None, skiprows=1)
+                    # 手动设置列名（只使用前面匹配的部分）
+                    header_names = header_line.split(',')
+                    if len(header_names) < len(self.target_data.columns):
+                        # 如果数据列更多，为额外的列生成名称
+                        extra_cols = len(self.target_data.columns) - len(header_names)
+                        for i in range(extra_cols):
+                            header_names.append(f'extra_col_{i+1}')
+                    
+                    self.target_data.columns = header_names[:len(self.target_data.columns)]
+                    
+                    # 转换数据类型：时间戳为字符串，其他为数值
+                    self.target_data['timestamp'] = self.target_data['timestamp'].astype(str)
+                    for col in self.target_data.columns:
+                        if col != 'timestamp':
+                            self.target_data[col] = pd.to_numeric(self.target_data[col], errors='coerce')
+                    
+                    print(f"修复后的数据形状: {self.target_data.shape}")
+                    
+                except Exception as e:
+                    print(f"修复失败: {e}")
+                    # 回退到原始方法
+                    self.target_data = pd.read_csv(target_file, dtype={'timestamp': str})
+            else:
+                # 字段数匹配，正常读取
+                self.target_data = pd.read_csv(target_file, dtype={'timestamp': str})
+        
+        print(f"目标数据形状: {self.target_data.shape}")
+        print(f"目标数据列名: {list(self.target_data.columns)}")
+        
+        # 检查时间戳列的内容
+        if 'timestamp' in self.target_data.columns:
+            print(f"原始目标数据时间戳示例: {self.target_data['timestamp'].iloc[0]}")
+            print(f"时间戳类型: {type(self.target_data['timestamp'].iloc[0])}")
+            
+            # 如果时间戳是数值，说明格式有问题
+            if isinstance(self.target_data['timestamp'].iloc[0], (int, float)):
+                print("警告: 时间戳列包含数值而不是时间字符串，CSV格式可能有问题")
+                # 尝试从列名中提取时间戳
+                self._extract_timestamp_from_malformed_data()
+            else:
+                self.target_data['timestamp'] = pd.to_datetime(self.target_data['timestamp'], errors='coerce')
+                print(f"解析后目标数据时间戳示例: {self.target_data['timestamp'].iloc[0]}")
+        else:
+            print("错误: 找不到timestamp列")
         
         # 读取状态数据
         self.state_data = pd.read_csv(state_file)
-        self.state_data['timestamp'] = pd.to_datetime(self.state_data['timestamp'])
+        print(f"原始状态数据时间戳示例: {self.state_data['timestamp'].iloc[0]}")
+        self.state_data['timestamp'] = pd.to_datetime(self.state_data['timestamp'], errors='coerce')
+        print(f"解析后状态数据时间戳示例: {self.state_data['timestamp'].iloc[0]}")
         
         print(f"加载数据完成:")
         print(f"  目标数据: {len(self.target_data)} 条记录")
         print(f"  状态数据: {len(self.state_data)} 条记录")
-        print(f"  时间范围: {self.target_data['timestamp'].min()} - {self.target_data['timestamp'].max()}")
+        
+        # 检查时间戳有效性
+        target_min = self.target_data['timestamp'].min()
+        target_max = self.target_data['timestamp'].max()
+        state_min = self.state_data['timestamp'].min()
+        state_max = self.state_data['timestamp'].max()
+        
+        print(f"  目标数据时间范围: {target_min} - {target_max}")
+        print(f"  状态数据时间范围: {state_min} - {state_max}")
+        
+        # 检查是否有无效时间戳
+        epoch_time = pd.Timestamp('1970-01-01 00:00:00')
+        target_invalid = (self.target_data['timestamp'] == epoch_time).sum()
+        state_invalid = (self.state_data['timestamp'] == epoch_time).sum()
+        
+        if target_invalid > 0:
+            print(f"  警告: 目标数据中有 {target_invalid} 条无效时间戳 (1970-01-01)")
+        if state_invalid > 0:
+            print(f"  警告: 状态数据中有 {state_invalid} 条无效时间戳 (1970-01-01)")
+        
+        # 检查时间范围重叠
+        if target_max < state_min or state_max < target_min:
+            print("  警告: 目标数据和状态数据的时间范围没有重叠！")
+        
+        # 过滤掉无效时间戳
+        if target_invalid > 0:
+            self.target_data = self.target_data[self.target_data['timestamp'] != epoch_time]
+            print(f"  已过滤目标数据中的无效时间戳，剩余 {len(self.target_data)} 条记录")
+        
+        if state_invalid > 0:
+            self.state_data = self.state_data[self.state_data['timestamp'] != epoch_time]
+            print(f"  已过滤状态数据中的无效时间戳，剩余 {len(self.state_data)} 条记录")
+        
+        # 动态检测实际的电机数量
+        self._detect_motor_count()
         
         return self.target_data, self.state_data
+    
+    def _detect_motor_count(self):
+        """根据CSV数据动态检测电机数量"""
+        # 从目标数据中检测电机数量
+        target_position_cols = [col for col in self.target_data.columns if col.startswith('target_position_motor_')]
+        target_motor_count = len(target_position_cols)
+        
+        # 从状态数据中检测电机数量  
+        state_position_cols = [col for col in self.state_data.columns if col.startswith('position_motor_')]
+        state_motor_count = len(state_position_cols)
+        
+        print(f"检测到的电机数量:")
+        print(f"  目标数据: {target_motor_count} 个电机")
+        print(f"  状态数据: {state_motor_count} 个电机")
+        
+        # 使用较小的数量以确保数据对齐时不会出错
+        detected_motor_count = min(target_motor_count, state_motor_count)
+        
+        if detected_motor_count != self.motor_count:
+            print(f"  调整电机数量: {self.motor_count} -> {detected_motor_count}")
+            self.motor_count = detected_motor_count
+        else:
+            print(f"  确认电机数量: {self.motor_count}")
+        
+        # 验证检测结果
+        if self.motor_count == 0:
+            print("警告: 未检测到有效的电机数据列!")
+        elif self.motor_count < 6:
+            print(f"警告: 检测到的电机数量({self.motor_count})少于预期的6个")
+        
+        return self.motor_count
+    
+    def _fix_malformed_csv(self, csv_file_path: str):
+        """修复格式错误的CSV文件"""
+        print("正在修复CSV格式...")
+        backup_file = csv_file_path + '.backup'
+        
+        # 备份原文件
+        import shutil
+        shutil.copy2(csv_file_path, backup_file)
+        print(f"原文件已备份到: {backup_file}")
+        
+        # 读取并修复
+        with open(csv_file_path, 'r') as f:
+            lines = f.readlines()
+        
+        fixed_lines = []
+        for i, line in enumerate(lines):
+            line = line.strip()
+            if i == 0:  # 头部行
+                fixed_lines.append(line)
+            else:
+                # 数据行：如果包含空格但逗号很少，说明格式错误
+                if ' ' in line and line.count(',') < 10:
+                    # 尝试用空格分割并重新用逗号连接
+                    parts = line.split()
+                    if len(parts) > 1:
+                        # 第一部分是时间戳，其余是数据
+                        timestamp = parts[0]
+                        data_parts = parts[1:]
+                        fixed_line = timestamp + ',' + ','.join(data_parts)
+                        fixed_lines.append(fixed_line)
+                    else:
+                        fixed_lines.append(line)
+                else:
+                    fixed_lines.append(line)
+        
+        # 写回修复后的文件
+        with open(csv_file_path, 'w') as f:
+            for line in fixed_lines:
+                f.write(line + '\n')
+        
+        print("CSV格式修复完成")
+    
+    def _extract_timestamp_from_malformed_data(self):
+        """从格式错误的数据中提取时间戳"""
+        print("尝试从格式错误的数据中提取时间戳...")
+        
+        # 如果数据都在第一列，尝试解析
+        if len(self.target_data.columns) == 1:
+            # 数据可能都在列名中
+            column_name = self.target_data.columns[0]
+            if 'T' in column_name and ':' in column_name:
+                # 列名包含时间戳
+                timestamp_str = column_name.split()[0]  # 取第一部分作为时间戳
+                print(f"从列名中提取的时间戳: {timestamp_str}")
+                
+                # 创建新的DataFrame结构
+                # 这里需要更复杂的解析逻辑
+                print("警告: 数据格式严重错误，需要手动修复CSV文件")
     
     def align_data(self) -> pd.DataFrame:
         """
@@ -104,9 +303,62 @@ class MotorLogAnalyzer:
         
         self.aligned_data = pd.DataFrame(aligned_records)
         print(f"数据对齐完成: {len(self.aligned_data)} 条对齐记录")
+        
+        # 检查是否有对齐的数据
+        if len(self.aligned_data) == 0:
+            print("警告: 没有成功对齐的数据！")
+            print("可能的原因:")
+            print("1. 时间戳格式不正确或为无效值")
+            print("2. 目标数据和状态数据的时间范围不匹配")
+            print("3. 时间对齐阈值太小")
+            return self.aligned_data
+        
         print(f"平均时间延迟: {self.aligned_data['time_delay_ms'].mean():.3f}ms")
         
         return self.aligned_data
+    
+    def calculate_error_statistics(self) -> Dict:
+        """计算误差统计信息"""
+        if self.aligned_data is None or len(self.aligned_data) == 0:
+            return {'error': '没有对齐的数据'}
+        
+        stats = {}
+        
+        for motor_id in range(1, self.motor_count + 1):
+            target_pos_col = f'target_position_motor_{motor_id}'
+            actual_pos_col = f'actual_position_motor_{motor_id}'
+            target_vel_col = f'target_velocity_motor_{motor_id}'
+            actual_vel_col = f'actual_velocity_motor_{motor_id}'
+            
+            if target_pos_col in self.aligned_data.columns and actual_pos_col in self.aligned_data.columns:
+                # 位置误差
+                pos_error = self.aligned_data[actual_pos_col] - self.aligned_data[target_pos_col]
+                
+                # 速度误差
+                vel_error = None
+                if target_vel_col in self.aligned_data.columns and actual_vel_col in self.aligned_data.columns:
+                    vel_error = self.aligned_data[actual_vel_col] - self.aligned_data[target_vel_col]
+                
+                motor_stats = {
+                    'position_error': {
+                        'mean': float(pos_error.mean()),
+                        'std': float(pos_error.std()),
+                        'rms': float(np.sqrt(np.mean(pos_error**2))),
+                        'max_abs': float(pos_error.abs().max())
+                    }
+                }
+                
+                if vel_error is not None:
+                    motor_stats['velocity_error'] = {
+                        'mean': float(vel_error.mean()),
+                        'std': float(vel_error.std()),
+                        'rms': float(np.sqrt(np.mean(vel_error**2))),
+                        'max_abs': float(vel_error.abs().max())
+                    }
+                
+                stats[f'motor_{motor_id}'] = motor_stats
+        
+        return stats
     
     def plot_motor_trajectories(self, motor_ids: List[int] = None, save_plots: bool = True) -> None:
         """
@@ -149,6 +401,73 @@ class MotorLogAnalyzer:
             plot_file = os.path.join(self.log_dir, 'motor_trajectories.png')
             plt.savefig(plot_file, dpi=300, bbox_inches='tight')
             print(f"轨迹图已保存: {plot_file}")
+        
+        plt.show()
+    
+    def plot_error_analysis(self, save_plots: bool = True) -> None:
+        """绘制误差分析图"""
+        if self.aligned_data is None or len(self.aligned_data) == 0:
+            print("警告: 没有对齐的数据，跳过误差分析图")
+            return
+        
+        # 计算误差统计
+        error_stats = self.calculate_error_statistics()
+        if 'error' in error_stats:
+            print(f"警告: {error_stats['error']}")
+            return
+        
+        # 创建误差分析图
+        fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+        fig.suptitle('Motor Error Analysis', fontsize=16)
+        
+        motors_plotted = 0
+        for motor_id in range(1, self.motor_count + 1):
+            if motors_plotted >= 6:  # 最多显示6个电机
+                break
+                
+            motor_key = f'motor_{motor_id}'
+            if motor_key not in error_stats:
+                continue
+                
+            row = motors_plotted // 3
+            col = motors_plotted % 3
+            ax = axes[row, col]
+            
+            # 计算位置误差
+            target_pos_col = f'target_position_motor_{motor_id}'
+            actual_pos_col = f'actual_position_motor_{motor_id}'
+            
+            if target_pos_col in self.aligned_data.columns and actual_pos_col in self.aligned_data.columns:
+                pos_error = self.aligned_data[actual_pos_col] - self.aligned_data[target_pos_col]
+                
+                # 绘制误差时间序列
+                time_indices = range(len(pos_error))
+                ax.plot(time_indices, pos_error, 'b-', alpha=0.7, linewidth=0.5)
+                ax.set_title(f'Motor {motor_id} Position Error')
+                ax.set_xlabel('Time Steps')
+                ax.set_ylabel('Position Error (rad)')
+                ax.grid(True, alpha=0.3)
+                
+                # 添加统计信息
+                stats = error_stats[motor_key]['position_error']
+                ax.text(0.02, 0.98, f'RMS: {stats["rms"]:.4f}\nMax: {stats["max_abs"]:.4f}', 
+                       transform=ax.transAxes, verticalalignment='top',
+                       bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+            
+            motors_plotted += 1
+        
+        # 隐藏未使用的子图
+        for i in range(motors_plotted, 6):
+            row = i // 3
+            col = i % 3
+            axes[row, col].set_visible(False)
+        
+        plt.tight_layout()
+        
+        if save_plots:
+            plot_file = os.path.join(self.log_dir, 'error_analysis.png')
+            plt.savefig(plot_file, dpi=300, bbox_inches='tight')
+            print(f"误差分析图已保存: {plot_file}")
         
         plt.show()
     
@@ -322,55 +641,75 @@ class MotorLogAnalyzer:
             print(f"分析报告已保存: {report_file}")
         
         return report_text
-    
-    def run_complete_analysis(self, motor_ids: List[int] = None) -> str:
+
+    def run_complete_analysis(self) -> Dict:
         """
         运行完整的分析流程
         
-        Args:
-            motor_ids: 要分析的电机ID列表
-        
         Returns:
-            report_text: 分析报告
+            analysis_report: 包含所有分析结果的字典
         """
-        print("开始日志分析...")
+        print("开始完整分析流程...")
         
         # 1. 加载数据
         self.load_data()
         
+        # 检查数据是否为空
+        if len(self.target_data) == 0 or len(self.state_data) == 0:
+            print("错误: 加载的数据为空，无法进行分析")
+            return {'error': '数据为空'}
+        
         # 2. 对齐数据
         self.align_data()
         
-        # 2.5. 调试数据统计
-        self.debug_data_statistics()
+        # 检查对齐数据是否为空
+        if len(self.aligned_data) == 0:
+            print("错误: 数据对齐失败，无法进行后续分析")
+            return {
+                'error': '数据对齐失败',
+                'data_summary': {
+                    'target_records': len(self.target_data),
+                    'state_records': len(self.state_data),
+                    'aligned_records': 0,
+                    'time_range': f"{self.target_data['timestamp'].min()} - {self.target_data['timestamp'].max()}" if len(self.target_data) > 0 else "N/A"
+                }
+            }
         
-        # 3. 绘制轨迹图
-        self.plot_motor_trajectories(motor_ids)
+        # 3. 计算误差统计
+        error_stats = self.calculate_error_statistics()
         
-        # 4. 分析性能
-        analysis_results = self.analyze_tracking_performance()
+        # 4. 绘制轨迹对比图
+        self.plot_motor_trajectories()
         
-        # 5. 生成报告
-        report = self.generate_report(analysis_results)
+        # 5. 绘制误差分析图
+        self.plot_error_analysis()
         
-        print("\n分析完成！")
+        # 6. 生成报告
+        report = {
+            'data_summary': {
+                'target_records': len(self.target_data),
+                'state_records': len(self.state_data),
+                'aligned_records': len(self.aligned_data),
+                'time_range': f"{self.target_data['timestamp'].min()} - {self.target_data['timestamp'].max()}"
+            },
+            'error_statistics': error_stats,
+            'plots_saved': True
+        }
+        
+        print("完整分析流程完成!")
         return report
 
-
-def find_latest_log_dir(base_log_dir: str = "/Users/lr-2002/project/instantcreation/IC_arm_control/logs") -> str:
+def find_latest_log_dir(base_log_dir: str = "logs") -> str:
     """
-    自动找到最新的日志目录
+    查找最新的日志目录
     
     Args:
-        base_log_dir: 日志基础目录
-    
+        base_log_dir: 基础日志目录路径
+        
     Returns:
-        latest_log_dir: 最新的日志目录路径
+        latest_log_dir: 最新日志目录的完整路径
     """
     import glob
-    
-    if not os.path.exists(base_log_dir):
-        raise FileNotFoundError(f"日志基础目录不存在: {base_log_dir}")
     
     # 查找所有日志目录（格式：YYYYMMDD_HHMMSS）
     log_pattern = os.path.join(base_log_dir, "????????_??????")

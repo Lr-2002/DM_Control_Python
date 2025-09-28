@@ -150,7 +150,9 @@ class ICARM:
         self.q_prev = np.zeros(motor_count, dtype=np.float64)
         self.dq_prev = np.zeros(motor_count, dtype=np.float64)
         self.last_update_time = time.time()
-
+        self.zero_pos = np.zeros(motor_count, dtype=np.float64)
+        self.zero_vel = np.zeros(motor_count, dtype=np.float64)
+        self.zero_tau = np.zeros(motor_count, dtype=np.float64)
         self._validate_internal_state()
 
         # 使能所有电机并初始化状态
@@ -174,6 +176,19 @@ class ICARM:
         )
         self.logger.start()
         debug_print("✓ 异步日志系统已启动")
+
+        # 状态缓存机制 - 减少冗余USB通信
+        self._state_cache = {
+            'q': np.zeros(motor_count, dtype=np.float64),
+            'dq': np.zeros(motor_count, dtype=np.float64),
+            'tau': np.zeros(motor_count, dtype=np.float64),
+            'currents': np.zeros(motor_count, dtype=np.float64),
+            'timestamp': 0,
+            'valid': False
+        }
+        self._currents_cached = None  # 懒加载缓存
+        self._last_state_refresh = 0
+        self._state_refresh_interval = 0.001  # 1ms最小刷新间隔
         
         # 初始化缓冲控制组件
         self.safety_monitor = SafetyMonitor(motor_count=self.motor_count)
@@ -220,7 +235,7 @@ class ICARM:
         # 方案1: 使用批量更新状态
         if refresh:
             self.motor_manager.update_all_states()
-        
+
         # 方案2: 优化的循环 - 减少函数调用和字典访问
         motors = self.motor_manager.motors
         for i in range(self.motor_count):
@@ -228,13 +243,75 @@ class ICARM:
             motor = motors[motor_id]
             feedback = motor.feedback
             self.q[i] = feedback.position
-            self.dq[i] = feedback.velocity  
+            self.dq[i] = feedback.velocity
             self.tau[i] = feedback.torque
 
-            
+
         # 记录电机状态到日志
         if hasattr(self, 'logger') and self.logger.is_running:
-            self.logger.log_motor_states(self.q, self.dq, self.tau)
+            # 添加调试信息
+            print(f"[DEBUG] 准备记录日志 - 位置数据: {self.q[:3]}...")
+            log_success = self.logger.log_motor_states(self.q, self.dq, self.tau)
+            if log_success:
+                print(f"[DEBUG] 日志记录成功")
+            else:
+                print(f"[DEBUG] 日志记录失败")
+        else:
+            print(f"[DEBUG] 日志系统未运行 - hasattr: {hasattr(self, 'logger')}, is_running: {getattr(self.logger, 'is_running', False) if hasattr(self, 'logger') else 'N/A'}")
+
+        return self.q, self.dq, self.tau
+
+    def _read_all_states_fast(self, refresh=True):
+        """Read all motor states without logging - optimized for maximum FPS"""
+        # 方案1: 使用批量更新状态
+        if refresh:
+            self.motor_manager.update_all_states()
+
+        # 方案2: 优化的循环 - 减少函数调用和字典访问
+        motors = self.motor_manager.motors
+        for i in range(self.motor_count):
+            motor_id = i + 1
+            motor = motors[motor_id]
+            feedback = motor.feedback
+            self.q[i] = feedback.position
+            self.dq[i] = feedback.velocity
+            self.tau[i] = feedback.torque
+
+        return self.q, self.dq, self.tau
+
+    def _read_all_states_cached(self):
+        """Read all motor states with caching - 最小化USB通信"""
+        current_time = time.time()
+
+        # 检查缓存是否有效
+        if (self._state_cache['valid'] and
+            current_time - self._last_state_refresh < self._state_refresh_interval):
+            # 返回缓存的数据
+            self.q = self._state_cache['q'].copy()
+            self.dq = self._state_cache['dq'].copy()
+            self.tau = self._state_cache['tau'].copy()
+            return self.q, self.dq, self.tau
+
+        # 需要刷新状态
+        self.motor_manager.update_all_states()
+
+        # 优化循环 - 减少函数调用
+        motors = self.motor_manager.motors
+        for i in range(self.motor_count):
+            motor_id = i + 1
+            motor = motors[motor_id]
+            feedback = motor.feedback
+            self.q[i] = feedback.position
+            self.dq[i] = feedback.velocity
+            self.tau[i] = feedback.torque
+
+        # 更新缓存
+        self._state_cache['q'] = self.q.copy()
+        self._state_cache['dq'] = self.dq.copy()
+        self._state_cache['tau'] = self.tau.copy()
+        self._state_cache['timestamp'] = current_time
+        self._state_cache['valid'] = True
+        self._last_state_refresh = current_time
 
         return self.q, self.dq, self.tau
 
@@ -243,19 +320,41 @@ class ICARM:
     def _refresh_all_states(self):
         """Refresh all motor states using unified motor control system"""
 
-        # 使用最快的读取方法，避免重复的update_all_states调用
+        # 使用标准读取方法，包含日志记录
         self.q, self.dq, self.tau = self._read_all_states()
-        self.currents = self.tau / 0.1
+        self.currents = self.tau * 10.0  # 优化: 使用乘法代替除法
 
         self.last_update_time = time.time()
 
+        # 添加调试输出 - 显示日志记录
+        if hasattr(self, 'logger') and self.logger.is_running:
+            print(f"[LOG] 电机状态已记录到日志系统")
+
     def _refresh_all_states_fast(self):
-        """快速状态刷新"""
-        self._refresh_all_states()
+        """快速状态刷新 - 跳过日志记录"""
+        self.q, self.dq, self.tau = self._read_all_states_fast()
+        self.currents = self.tau * 10.0  # 优化: 使用乘法代替除法
+        self.last_update_time = time.time()
+        # 调试输出
+        print(f"[FAST] 跳过日志记录，完成快速状态刷新")
 
     def _refresh_all_states_ultra_fast(self):
-        """超快速状态刷新"""
-        self._refresh_all_states()
+        """超快速状态刷新 - 使用缓存和跳过所有非必要操作"""
+        # 使用缓存方法读取状态，最小化USB通信
+        self.q, self.dq, self.tau = self._read_all_states_cached()
+        # 重置电流缓存
+        self._currents_cached = None
+        self.last_update_time = time.time()
+        # 调试输出
+        print(f"[ULTRA] 使用缓存机制，完成超快速状态刷新")
+
+    def _refresh_all_states_cached(self):
+        """缓存状态刷新 - 用于高频控制循环"""
+        # 使用缓存方法读取状态
+        self.q, self.dq, self.tau = self._read_all_states_cached()
+        self.last_update_time = time.time()
+        # 调试输出
+        print(f"[CACHED] 使用缓存机制，最小化USB通信")
 
     # ========== PUBLIC READ INTERFACES ==========
 
@@ -287,7 +386,11 @@ class ICARM:
         """Get joint currents in A - 返回内部维护的电流状态"""
         if refresh:
             self._refresh_all_states()  # 更新内部状态变量
-        return self.currents.copy()  # 返回内部维护的电流副本
+
+        # 懒加载计算currents，如果还没有计算的话
+        if not hasattr(self, '_currents_cached') or self._currents_cached is None:
+            self._currents_cached = self.tau * 10.0  # 优化: 使用乘法代替除法
+        return self._currents_cached.copy()  # 返回内部维护的电流副本
 
     def get_complete_state(self) -> Dict[str, Union[np.ndarray, float]]:
         """Get complete robot state"""
@@ -376,6 +479,7 @@ class ICARM:
         self, positions_rad, velocities_rad_s=None, torques_nm=None
     ):
         """Set positions of all joints - 支持缓冲控制模式"""
+
         if velocities_rad_s is None:
             velocities_rad_s = np.zeros(self.motor_count)
         if torques_nm is None:
@@ -1625,6 +1729,114 @@ class ICARM:
             self.close()
         except:
             pass
+
+    def test_fps_performance(self, duration=5.0, method='ultra_fast'):
+        """
+        测试不同状态刷新方法的FPS性能
+
+        Args:
+            duration: 测试时长(秒)
+            method: 测试方法 ('normal', 'fast', 'ultra_fast', 'cached')
+
+        Returns:
+            dict: 性能统计信息
+        """
+        import time
+
+        print(f"=== FPS性能测试 ===")
+        print(f"测试方法: {method}")
+        print(f"测试时长: {duration}秒")
+        print("请确保电机已启用并安全...")
+
+        method_map = {
+            'normal': self._refresh_all_states,
+            'fast': self._refresh_all_states_fast,
+            'ultra_fast': self._refresh_all_states_ultra_fast,
+            'cached': self._refresh_all_states_cached
+        }
+
+        if method not in method_map:
+            print(f"无效的测试方法: {method}")
+            return None
+
+        refresh_func = method_map[method]
+
+        # 预热
+        print("预热中...")
+        for _ in range(10):
+            refresh_func()
+        time.sleep(0.1)
+
+        # 开始测试
+        print("开始性能测试...")
+        start_time = time.time()
+        count = 0
+
+        try:
+            while time.time() - start_time < duration:
+                refresh_func()
+                count += 1
+
+        except KeyboardInterrupt:
+            print("测试被用户中断")
+
+        end_time = time.time()
+        actual_duration = end_time - start_time
+        fps = count / actual_duration
+
+        print(f"=== 测试结果 ===")
+        print(f"测试方法: {method}")
+        print(f"实际时长: {actual_duration:.3f}秒")
+        print(f"调用次数: {count}")
+        print(f"平均FPS: {fps:.1f} Hz")
+        print(f"平均调用间隔: {1000.0/fps:.2f} ms")
+        print("================")
+
+        return {
+            'method': method,
+            'duration': actual_duration,
+            'count': count,
+            'fps': fps,
+            'avg_interval_ms': 1000.0/fps
+        }
+
+    def benchmark_all_methods(self, duration=3.0):
+        """
+        基准测试所有状态刷新方法
+
+        Args:
+            duration: 每个方法的测试时长(秒)
+
+        Returns:
+            dict: 所有方法的性能比较结果
+        """
+        methods = ['normal', 'fast', 'ultra_fast', 'cached']
+        results = {}
+
+        print(f"=== 全面的FPS性能基准测试 ===")
+        print(f"每个方法测试时长: {duration}秒")
+        print("========================")
+
+        for method in methods:
+            result = self.test_fps_performance(duration, method)
+            if result:
+                results[method] = result
+            print()  # 空行分隔
+
+        # 性能比较
+        print("=== 性能比较 ===")
+        if results:
+            best_method = max(results.items(), key=lambda x: x[1]['fps'])
+            worst_method = min(results.items(), key=lambda x: x[1]['fps'])
+
+            print(f"最快方法: {best_method[0]} ({best_method[1]['fps']:.1f} Hz)")
+            print(f"最慢方法: {worst_method[0]} ({worst_method[1]['fps']:.1f} Hz)")
+            print(f"性能提升: {best_method[1]['fps']/worst_method[1]['fps']:.1f}x")
+
+            for method, result in results.items():
+                print(f"{method:12s}: {result['fps']:6.1f} Hz ({result['avg_interval_ms']:5.2f} ms)")
+
+        return results
 
 
 # ========== EXAMPLE USAGE ==========
