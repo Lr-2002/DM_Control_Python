@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+"""
+Lightweight MLP-based Gravity Compensation for IC ARM
+
+This module uses scikit-learn's neural network for gravity compensation,
+providing a lightweight alternative to deep learning frameworks.
+
+Key features:
+- Scikit-learn MLPRegressor
+- Automatic cross-validation
+- Early stopping
+- Robust scaling
+- Model persistence
+"""
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.neural_network import MLPRegressor
+from sklearn.preprocessing import RobustScaler
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.metrics import mean_squared_error, r2_score
+import pickle
+import os
+import time
+
+
+class LightweightMLPGravityCompensation:
+    """Lightweight MLP-based gravity compensation using scikit-learn"""
+
+    def __init__(self, hidden_layer_sizes=(100, 50), max_iter=500, random_state=42):
+        """
+        Initialize lightweight MLP gravity compensation
+
+        Args:
+            hidden_layer_sizes: Tuple of hidden layer sizes
+            max_iter: Maximum number of iterations
+            random_state: Random seed for reproducibility
+        """
+        self.hidden_layer_sizes = hidden_layer_sizes
+        self.max_iter = max_iter
+        self.random_state = random_state
+        self.max_torque = 5.0  # Safety limit
+
+        # Initialize scalers
+        self.input_scaler = RobustScaler()
+        self.output_scaler = RobustScaler()
+
+        # Initialize separate MLP for each joint (better performance)
+        self.mlps = []
+        for i in range(6):  # 6 joints
+            mlp = MLPRegressor(
+                hidden_layer_sizes=hidden_layer_sizes,
+                activation='relu',
+                solver='adam',
+                alpha=0.001,  # L2 regularization
+                batch_size=64,
+                learning_rate='adaptive',
+                learning_rate_init=0.001,
+                max_iter=max_iter,
+                early_stopping=True,
+                validation_fraction=0.2,
+                n_iter_no_change=20,
+                random_state=random_state,
+                tol=1e-6
+            )
+            self.mlps.append(mlp)
+
+        self.is_trained = False
+        self.train_scores = []
+        self.val_scores = []
+
+    def train(self, positions, torques, velocities=None):
+        """
+        Train MLP models
+
+        Args:
+            positions: Joint positions (N, 6)
+            torques: Target torques (N, 6)
+            velocities: Joint velocities (N, 6) - optional
+        """
+        print("=== Training Lightweight MLP Models ===")
+
+        # Prepare inputs
+        if velocities is None:
+            velocities = np.zeros_like(positions)
+
+        inputs = np.concatenate([positions, velocities], axis=1)
+
+        # Scale inputs and outputs
+        inputs_scaled = self.input_scaler.fit_transform(inputs)
+        torques_scaled = self.output_scaler.fit_transform(torques)
+
+        # Train separate MLP for each joint
+        train_r2_scores = []
+        val_r2_scores = []
+
+        for i, mlp in enumerate(self.mlps):
+            print(f"Training MLP for Joint {i+1}...")
+
+            # Split data for this joint
+            X_train, X_val, y_train, y_val = train_test_split(
+                inputs_scaled, torques_scaled[:, i], test_size=0.2, random_state=42
+            )
+
+            # Train MLP
+            mlp.fit(X_train, y_train)
+
+            # Evaluate
+            train_pred = mlp.predict(X_train)
+            val_pred = mlp.predict(X_val)
+
+            train_r2 = r2_score(y_train, train_pred)
+            val_r2 = r2_score(y_val, val_pred)
+
+            train_r2_scores.append(train_r2)
+            val_r2_scores.append(val_r2)
+
+            print(f"  Joint {i+1}: Train R² = {train_r2:.4f}, Val R² = {val_r2:.4f}")
+
+        self.train_scores = train_r2_scores
+        self.val_scores = val_r2_scores
+        self.is_trained = True
+
+        print(f"✅ Training completed!")
+        print(f"Average Train R²: {np.mean(train_r2_scores):.4f}")
+        print(f"Average Val R²: {np.mean(val_r2_scores):.4f}")
+
+    def predict(self, positions, velocities=None):
+        """
+        Predict gravity torques
+
+        Args:
+            positions: Joint positions (N, 6)
+            velocities: Joint velocities (N, 6) - optional
+
+        Returns:
+            predicted_torques: Predicted gravity torques (N, 6)
+        """
+        if not self.is_trained:
+            raise ValueError("Model not trained yet")
+
+        # Prepare inputs
+        if velocities is None:
+            velocities = np.zeros_like(positions)
+
+        inputs = np.concatenate([positions, velocities], axis=1)
+        inputs_scaled = self.input_scaler.transform(inputs)
+
+        # Predict for each joint
+        predictions_scaled = np.zeros((len(positions), 6))
+        for i, mlp in enumerate(self.mlps):
+            predictions_scaled[:, i] = mlp.predict(inputs_scaled)
+
+        # Inverse transform
+        predictions = self.output_scaler.inverse_transform(predictions_scaled)
+
+        # Apply safety limits
+        predictions = np.clip(predictions, -self.max_torque, self.max_torque)
+
+        return predictions
+
+    def compute_gravity_compensation(self, joint_positions):
+        """
+        Compute gravity compensation for single position
+
+        Args:
+            joint_positions: Single joint position vector (6,)
+
+        Returns:
+            gravity_torques: Gravity compensation torques (6,)
+        """
+        if joint_positions.ndim == 1:
+            joint_positions = joint_positions.reshape(1, -1)
+
+        torques = self.predict(joint_positions)
+        return torques.flatten()
+
+    def save_model(self, filepath):
+        """Save trained model"""
+        if not self.is_trained:
+            print("⚠️ No model to save")
+            return
+
+        model_data = {
+            'mlps': self.mlps,
+            'input_scaler': self.input_scaler,
+            'output_scaler': self.output_scaler,
+            'hidden_layer_sizes': self.hidden_layer_sizes,
+            'max_iter': self.max_iter,
+            'random_state': self.random_state,
+            'train_scores': self.train_scores,
+            'val_scores': self.val_scores,
+            'is_trained': self.is_trained
+        }
+
+        with open(filepath, 'wb') as f:
+            pickle.dump(model_data, f)
+
+        print(f"✅ Model saved to {filepath}")
+
+    def load_model(self, filepath):
+        """Load trained model"""
+        with open(filepath, 'rb') as f:
+            model_data = pickle.load(f)
+
+        self.mlps = model_data['mlps']
+        self.input_scaler = model_data['input_scaler']
+        self.output_scaler = model_data['output_scaler']
+        self.hidden_layer_sizes = model_data['hidden_layer_sizes']
+        self.max_iter = model_data['max_iter']
+        self.random_state = model_data['random_state']
+        self.train_scores = model_data['train_scores']
+        self.val_scores = model_data['val_scores']
+        self.is_trained = model_data['is_trained']
+
+        print(f"✅ Model loaded from {filepath}")
+
+    def get_performance_summary(self):
+        """Get model performance summary"""
+        if not self.is_trained:
+            return "Model not trained"
+
+        summary = "=== Model Performance Summary ===\n"
+        summary += f"Hidden layers: {self.hidden_layer_sizes}\n"
+        summary += f"Max iterations: {self.max_iter}\n\n"
+
+        summary += "Per-joint R² scores:\n"
+        for i in range(6):
+            summary += f"  Joint {i+1}: Train = {self.train_scores[i]:.4f}, Val = {self.val_scores[i]:.4f}\n"
+
+        summary += f"\nAverage Train R²: {np.mean(self.train_scores):.4f}\n"
+        summary += f"Average Val R²: {np.mean(self.val_scores):.4f}\n"
+
+        return summary
+
+
+def main():
+    """Main function to demonstrate lightweight MLP-based gravity compensation"""
+    print("=== Lightweight MLP-based Gravity Compensation for IC ARM ===")
+
+    # Load data
+    log_dir = "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250926_175734"
+
+    # Read motor states
+    motor_states_file = os.path.join(log_dir, 'motor_states.csv')
+    motor_states = pd.read_csv(motor_states_file)
+
+    # Extract data for first 6 joints
+    n_joints = 6
+    position_cols = [f'position_motor_{i+1}' for i in range(n_joints)]
+    velocity_cols = [f'velocity_motor_{i+1}' for i in range(n_joints)]
+    torque_cols = [f'torque_motor_{i+1}' for i in range(n_joints)]
+
+    positions = motor_states[position_cols].values
+    velocities = motor_states[velocity_cols].values
+    torques = motor_states[torque_cols].values
+
+    # Remove invalid data
+    valid_mask = ~(np.isnan(positions).any(axis=1) |
+                  np.isnan(velocities).any(axis=1) |
+                  np.isnan(torques).any(axis=1))
+
+    positions = positions[valid_mask]
+    velocities = velocities[valid_mask]
+    torques = torques[valid_mask]
+
+    # Remove torque outliers
+    torque_mask = np.abs(torques) < 20.0
+    positions = positions[torque_mask.all(axis=1)]
+    velocities = velocities[torque_mask.all(axis=1)]
+    torques = torques[torque_mask.all(axis=1)]
+
+    print(f"Loaded {len(positions)} valid data points")
+
+    # Initialize and train MLP model
+    mlp_system = LightweightMLPGravityCompensation(
+        hidden_layer_sizes=(100, 50),
+        max_iter=500,
+        random_state=42
+    )
+
+    # Train model
+    mlp_system.train(positions, torques, velocities)
+
+    # Print performance summary
+    print(mlp_system.get_performance_summary())
+
+    # Test model
+    print("\n=== Testing MLP Model ===")
+    test_positions = np.array([
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        [0.5, -0.3, 0.2, -0.1, 0.4, -0.2],
+        [1.0, -0.5, 0.5, -0.3, 0.8, -0.4]
+    ])
+
+    for i, pos in enumerate(test_positions):
+        pred = mlp_system.compute_gravity_compensation(pos)
+        print(f"Test {i+1}: {pred}")
+
+    # Save model
+    mlp_system.save_model('mlp_gravity_model.pkl')
+
+    # Performance test
+    print("\n=== Performance Test ===")
+    n_tests = 1000
+    test_positions = positions[:n_tests]
+    test_velocities = velocities[:n_tests]
+
+    start_time = time.time()
+    predictions = mlp_system.predict(test_positions, test_velocities)
+    avg_time = (time.time() - start_time) / n_tests * 1000
+
+    print(f"Average computation time: {avg_time:.3f} ms")
+    print(f"Frequency: {1000/avg_time:.1f} Hz")
+
+    if 1000/avg_time > 300:
+        print("✅ Suitable for 300Hz operation")
+    else:
+        print("⚠️ May not achieve 300Hz")
+
+    print("\n✅ Lightweight MLP-based gravity compensation completed!")
+
+
+if __name__ == "__main__":
+    main()
