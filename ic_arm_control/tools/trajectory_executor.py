@@ -41,7 +41,7 @@ class TrajectoryExecutor:
 		"""初始化IC_ARM硬件"""
 		try:
 			from ic_arm_control.control.IC_ARM import ICARM
-			self.arm = ICARM(debug=False, gc=False)
+			self.arm = ICARM(debug=False, gc=True)
 			print("IC_ARM硬件初始化成功")
 		except Exception as e:
 			print(f"IC_ARM硬件初始化失败: {e}")

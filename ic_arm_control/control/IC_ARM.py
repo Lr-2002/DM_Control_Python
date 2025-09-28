@@ -126,28 +126,28 @@ class ICARM:
 
 		# 电机配置数据
 
-		# self.motors_data = [
-		# 	MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 80, 1.5),
-		# 	MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x02, 0x12, 40, 1.2),
-		# 	MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 60, 1.5),
-		# 	MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 40, 1),
-		# 	MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 40, 1),
-		# 	MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 30, 1),
-		# 	MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 8, 1.2),
-		# 	MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 8, 1.2),
-		# 	MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0),
-		# ]
 		self.motors_data = [
-			MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 0, 0),
-			MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x02, 0x12, 0, 0),
-			MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 0, 0),
-			MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 0, 0),
-			MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 0, 0),
-			MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 0, 0.2),
-			MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 0, 0),
-			MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 0, 0),
+			MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 200, 4),
+			MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x02, 0x12, 100, 0),
+			MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 100, 0),
+			MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 40, 1),
+			MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 40, 1),
+			MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 30, 1),
+			MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 8, 1.2),
+			MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 8, 1.2),
 			MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0),
 		]
+		# self.motors_data = [
+		# 	MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 0, 0),
+		# 	MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x02, 0x12, 0, 0),
+		# 	MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 0, 0),
+		# 	MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 0, 0),
+		# 	MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 0, 0),
+		# 	MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 0, 0.2),
+		# 	MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 0, 0),
+		# 	MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 0, 0),
+		# 	MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0),
+		# ]
 
 		# 创建协议管理器
 		dm_protocol = DamiaoProtocol(usb_hw, DmMotorManager(usb_hw=usb_hw))
@@ -536,15 +536,18 @@ class ICARM:
 
 		return success
 
-	def set_joint_positions_with_gc(self, positions_rad, velocities_rad_s=None):
-		tau = self.cal_gravity()[0]
-		return self.set_joint_positions(positions_rad, velocities_rad_s, tau)
+	# def set_joint_positions_with_gc(self, positions_rad, velocities_rad_s=None):
+	# 	tau = self.cal_gravity()
+	# 	return self.set_joint_positions(positions_rad, velocities_rad_s, tau)
 
 	def set_joint_positions(
 		self, positions_rad, velocities_rad_s=None, torques_nm=None, enable_logging=True
 	):
 		"""Set positions of all joints - 支持缓冲控制模式"""
-
+		if self.gc_flag and not torques_nm:
+			tau = self.cal_gravity()
+			# print('calculated tau is ', tau)
+			torques_nm = tau
 		if velocities_rad_s is None:
 			velocities_rad_s = np.zeros(self.motor_count)
 		if torques_nm is None:
