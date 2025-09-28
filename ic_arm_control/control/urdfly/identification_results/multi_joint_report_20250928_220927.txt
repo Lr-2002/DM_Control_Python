@@ -1,0 +1,86 @@
+=== Multi-Joint Dynamics Identification Report ===
+
+Generation Time: 2025-09-28 22:09:27.916674
+Number of Joints: 6
+
+【Joint 1】
+  Samples: 32005
+  RMS Error: 4.577476
+  R² Score: 0.6316
+  Position Range: [-0.489624, 0.235943] rad
+  Velocity Range: [-3.901099, 1.910867] rad/s
+  Torque Range: [-29.744, 6.398] Nm
+  Regularization: 0.05
+  Key Parameters:
+    sin_pos: 4.730555
+    cos_pos: -3.853035
+    intercept: -6.794245
+
+【Joint 2】
+  Samples: 32005
+  RMS Error: 3.907490
+  R² Score: 0.4287
+  Position Range: [-1.704420, 0.414744] rad
+  Velocity Range: [-4.849817, 4.605617] rad/s
+  Torque Range: [-21.363, 24.703] Nm
+  Regularization: 0.05
+  Key Parameters:
+    sin_pos: 3.924715
+    cos_pos: -2.127906
+    intercept: 0.481580
+
+【Joint 3】
+  Samples: 32005
+  RMS Error: 3.850005
+  R² Score: 0.3500
+  Position Range: [-0.401706, 1.096205] rad
+  Velocity Range: [-4.556777, 3.081807] rad/s
+  Torque Range: [-16.440, 25.289] Nm
+  Regularization: 0.05
+  Key Parameters:
+    sin_pos: 2.802278
+    cos_pos: 0.687946
+    intercept: 1.561105
+
+【Joint 4】
+  Samples: 32005
+  RMS Error: 1.193206
+  R² Score: 0.8007
+  Position Range: [-3.039788, 2.672427] rad
+  Velocity Range: [-5.721612, 5.785104] rad/s
+  Torque Range: [-11.713, 13.231] Nm
+  Regularization: 0.05
+  Key Parameters:
+    sin_pos: 0.003500
+    cos_pos: -0.119703
+    intercept: -0.308100
+
+【Joint 5】
+  Samples: 32005
+  RMS Error: 1.495592
+  R² Score: 0.6265
+  Position Range: [-1.728656, 1.720264] rad
+  Velocity Range: [-5.804640, 6.234432] rad/s
+  Torque Range: [-12.697, 11.973] Nm
+  Regularization: 0.05
+  Key Parameters:
+    sin_pos: 0.974022
+    cos_pos: -0.297256
+    intercept: -1.247895
+
+【Joint 6】
+  Samples: 32005
+  RMS Error: 0.157234
+  R² Score: 0.6637
+  Position Range: [-2.065499, 2.097162] rad
+  Velocity Range: [-9.663004, 14.659341] rad/s
+  Torque Range: [-1.639, 3.416] Nm
+  Regularization: 0.05
+  Key Parameters:
+    sin_pos: 0.083789
+    cos_pos: 0.080072
+    intercept: -0.025314
+
+【Overall Statistics】
+  Average RMS Error: 2.530167
+  Average R² Score: 0.5835

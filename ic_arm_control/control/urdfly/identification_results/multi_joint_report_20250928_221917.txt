@@ -1,0 +1,137 @@
+=== Multi-Joint Dynamics Identification Report (Improved) ===
+
+Generation Time: 2025-09-28 22:19:17.677132
+Number of Joints: 6
+
+【Joint 1】
+  Model: Ridge
+  Best Parameters: {'alpha': 1.0}
+  Cross-validation R²: 0.9586
+  Samples: 5878 (from 6000)
+  RMS Error: 0.020019
+  R² Score: 0.9863
+  Position Range: [-41.6°, -16.2°]
+  Velocity Range: [-0.082, 0.137] rad/s
+  Torque Range: [-1.363, -0.550] Nm
+  Significant Parameters:
+    velocity: 0.010803
+    acceleration: 0.031914
+    smooth_velocity_sign: -0.001973
+    sin_pos: 0.225542
+    vel_squared: 0.000227
+    vel_cubed: -0.000095
+    pos_vel: 0.002134
+    cos_pos_acc: 0.004111
+    intercept: -0.852762
+
+【Joint 2】
+  Model: Ridge
+  Best Parameters: {'alpha': 1.0}
+  Cross-validation R²: 0.9886
+  Samples: 5978 (from 6000)
+  RMS Error: 0.019936
+  R² Score: 0.9986
+  Position Range: [-95.6°, -27.6°]
+  Velocity Range: [-0.202, 0.315] rad/s
+  Torque Range: [-5.208, -2.557] Nm
+  Significant Parameters:
+    velocity: 0.022375
+    acceleration: 0.241587
+    smooth_velocity_sign: 0.000273
+    sin_pos: 0.750076
+    vel_squared: 0.000352
+    vel_cubed: 0.000036
+    pos_vel: -0.001146
+    cos_pos_acc: 0.000610
+    intercept: -4.385026
+
+【Joint 3】
+  Model: Ridge
+  Best Parameters: {'alpha': 0.1}
+  Cross-validation R²: 0.9820
+  Samples: 5896 (from 6000)
+  RMS Error: 0.020110
+  R² Score: 0.9963
+  Position Range: [32.9°, 72.1°]
+  Velocity Range: [-0.098, 0.144] rad/s
+  Torque Range: [1.639, 2.848] Nm
+  Significant Parameters:
+    velocity: 0.028317
+    acceleration: 0.050036
+    smooth_velocity_sign: -0.019048
+    sin_pos: 0.561544
+    vel_squared: 0.000225
+    vel_cubed: -0.000587
+    pos_vel: -0.001872
+    cos_pos_acc: 0.000737
+    intercept: 2.337612
+
+【Joint 4】
+  Model: Ridge
+  Best Parameters: {'alpha': 0.01}
+  Cross-validation R²: 0.9994
+  Samples: 5988 (from 6000)
+  RMS Error: 0.019976
+  R² Score: 0.9998
+  Position Range: [-54.4°, 39.7°]
+  Velocity Range: [-0.495, 0.505] rad/s
+  Torque Range: [-3.077, 2.035] Nm
+  Significant Parameters:
+    velocity: 0.037914
+    acceleration: 0.682243
+    smooth_velocity_sign: 0.006672
+    sin_pos: 2.425490
+    vel_squared: 0.000184
+    vel_cubed: 0.000825
+    pos_vel: 0.000474
+    cos_pos_acc: 0.005211
+    intercept: -0.876249
+
+【Joint 5】
+  Model: Ridge
+  Best Parameters: {'alpha': 1.0}
+  Cross-validation R²: 0.9804
+  Samples: 5948 (from 6000)
+  RMS Error: 0.020056
+  R² Score: 0.9971
+  Position Range: [-17.5°, 45.4°]
+  Velocity Range: [-0.208, 0.161] rad/s
+  Torque Range: [-0.471, 1.014] Nm
+  Significant Parameters:
+    velocity: 0.015397
+    acceleration: 0.058751
+    smooth_velocity_sign: -0.003643
+    sin_pos: 0.591813
+    vel_squared: 0.000059
+    vel_cubed: -0.000693
+    pos_vel: -0.000337
+    cos_pos_acc: 0.007674
+    intercept: 0.103533
+
+【Joint 6】
+  Model: Ridge
+  Best Parameters: {'alpha': 0.001}
+  Cross-validation R²: 0.9520
+  Samples: 5983 (from 6000)
+  RMS Error: 0.020033
+  R² Score: 0.9851
+  Position Range: [20.4°, 130.0°]
+  Velocity Range: [-0.486, 0.333] rad/s
+  Torque Range: [0.257, 0.910] Nm
+  Significant Parameters:
+    velocity: 0.017539
+    acceleration: 0.082633
+    smooth_velocity_sign: -0.003620
+    sin_pos: 0.318032
+    vel_squared: -0.000244
+    vel_cubed: -0.000268
+    pos_vel: -0.001125
+    cos_pos_acc: -0.000063
+    intercept: 0.707905
+
+【Overall Statistics】
+  Average RMS Error: 0.020021
+  Average R² Score: 0.9939
+  Average CV R² Score: 0.9768
+  Successfully Identified Joints: 6/6
+  Model Usage: {'Ridge': 6}

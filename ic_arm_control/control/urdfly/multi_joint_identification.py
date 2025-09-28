@@ -5,13 +5,16 @@
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import Ridge, LinearRegression
-from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import Ridge, Lasso, ElasticNet
+from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.model_selection import cross_val_score, GridSearchCV
 import matplotlib.pyplot as plt
 import os
 import time
 from datetime import datetime
+import warnings
+warnings.filterwarnings('ignore')
 
 class MultiJointIdentification:
     """多关节动力学辨识器"""
@@ -31,7 +34,7 @@ class MultiJointIdentification:
 
     def create_features(self, q, dq, ddq, joint_id):
         """
-        为指定关节创建动力学特征
+        为指定关节创建动力学特征 - 改进版本
 
         Args:
             q: 该关节的位置
@@ -46,17 +49,24 @@ class MultiJointIdentification:
 
         # 基本特征
         features.append(np.ones_like(q))  # 常数项（重力补偿）
-        features.append(dq)  # 速度相关
+        features.append(dq)  # 速度相关（粘性摩擦）
         features.append(ddq)  # 加速度相关（惯性）
-        features.append(np.sign(dq))  # 摩擦力方向
 
-        # 非线性特征
-        features.append(q * dq)  # 位置-速度耦合
-        features.append(q * ddq)  # 位置-加速度耦合
-        features.append(dq * ddq)  # 速度-加速度耦合
-        features.append(dq**2)  # 速度平方
+        # 摩擦力特征（使用连续函数代替sign）
+        features.append(np.tanh(dq * 10))  # 平滑的速度方向特征
+
+        # 重力相关特征（只使用sin避免共线性）
         features.append(np.sin(q))  # 位置相关重力
-        features.append(np.cos(q))  # 位置相关重力
+
+        # 非线性动力学特征
+        features.append(dq**2)  # 速度平方（空气阻力等）
+        features.append(dq**3)  # 速度立方（高阶摩擦）
+
+        # 耦合特征（简化版本）
+        features.append(q * dq)  # 位置-速度耦合
+
+        # 惯性变化特征
+        features.append(np.cos(q) * ddq)  # 位置相关的惯性变化
 
         # 组合特征矩阵
         X = np.column_stack(features)
@@ -64,15 +74,65 @@ class MultiJointIdentification:
         # 特征名称（只需设置一次）
         if not self.feature_names:
             self.feature_names = [
-                'constant', 'velocity', 'acceleration', 'velocity_sign',
-                'pos_vel', 'pos_acc', 'vel_acc', 'vel_squared', 'sin_pos', 'cos_pos'
+                'constant', 'velocity', 'acceleration', 'smooth_velocity_sign',
+                'sin_pos', 'vel_squared', 'vel_cubed', 'pos_vel', 'cos_pos_acc'
             ]
 
         return X
 
+    def preprocess_data(self, q, dq, ddq, tau, joint_id):
+        """
+        数据预处理 - 过滤低质量数据
+
+        Args:
+            q: 位置数组
+            dq: 速度数组
+            ddq: 加速度数组
+            tau: 力矩数组
+            joint_id: 关节ID
+
+        Returns:
+            过滤后的数据
+        """
+        print(f"  原始数据点: {len(q)}")
+
+        # 移除零加速度数据点（这些对惯性辨识无用）
+        zero_acc_mask = np.abs(ddq) < 1e-6
+        if np.sum(zero_acc_mask) > len(q) * 0.5:
+            print(f"  警告: {np.sum(zero_acc_mask)/len(q)*100:.1f}% 的加速度接近零")
+
+        # 移除异常值
+        tau_iqr = np.percentile(tau, [25, 75])
+        tau_range = tau_iqr[1] - tau_iqr[0]
+        tau_lower = tau_iqr[0] - 3 * tau_range
+        tau_upper = tau_iqr[1] + 3 * tau_range
+        outlier_mask = (tau < tau_lower) | (tau > tau_upper)
+
+        # 移除静力矩数据点（加速度和速度都很小）
+        static_mask = (np.abs(dq) < 0.01) & (np.abs(ddq) < 0.01)
+
+        # 组合过滤条件
+        valid_mask = ~(zero_acc_mask | outlier_mask | static_mask)
+
+        if np.sum(valid_mask) < 100:  # 如果有效数据太少，放宽条件
+            print(f"  有效数据不足 ({np.sum(valid_mask)}), 放宽过滤条件")
+            valid_mask = ~outlier_mask  # 只移除明显的异常值
+
+        q_filtered = q[valid_mask]
+        dq_filtered = dq[valid_mask]
+        ddq_filtered = ddq[valid_mask]
+        tau_filtered = tau[valid_mask]
+
+        print(f"  过滤后数据点: {len(q_filtered)}")
+        print(f"  位置范围: [{np.degrees(q_filtered.min()):.1f}°, {np.degrees(q_filtered.max()):.1f}°]")
+        print(f"  速度范围: [{dq_filtered.min():.3f}, {dq_filtered.max():.3f}] rad/s")
+        print(f"  加速度范围: [{ddq_filtered.min():.3f}, {ddq_filtered.max():.3f}] rad/s²")
+
+        return q_filtered, dq_filtered, ddq_filtered, tau_filtered
+
     def identify_joint(self, joint_id, q, dq, ddq, tau, regularization=0.1):
         """
-        辨识单个关节的动力学参数
+        辨识单个关节的动力学参数 - 改进版本
 
         Args:
             joint_id: 关节ID (1-5)
@@ -87,54 +147,100 @@ class MultiJointIdentification:
         """
         print(f"=== 关节{joint_id}动力学辨识 ===")
 
+        # 数据预处理
+        q_proc, dq_proc, ddq_proc, tau_proc = self.preprocess_data(q, dq, ddq, tau, joint_id)
+
+        if len(q_proc) < 50:
+            print(f"  警告: 有效数据不足 ({len(q_proc)} 个点)，辨识结果可能不可靠")
+            return None, None, None
+
         # 创建特征矩阵
-        X = self.create_features(q, dq, ddq, joint_id)
-        y = tau
+        X = self.create_features(q_proc, dq_proc, ddq_proc, joint_id)
+        y = tau_proc
 
         print(f"特征矩阵形状: {X.shape}")
-        print(f"力矩向量长度: {len(y)}")
 
-        # 数据标准化
-        scaler = StandardScaler()
+        # 使用鲁棒缩放处理异常值
+        scaler = RobustScaler()
         X_scaled = scaler.fit_transform(X)
 
-        # 使用岭回归进行辨识
-        model = Ridge(alpha=regularization)
-        model.fit(X_scaled, y)
+        # 模型选择和超参数优化
+        models = {
+            'Ridge': Ridge(),
+            'Lasso': Lasso(max_iter=2000),
+            'ElasticNet': ElasticNet(max_iter=2000)
+        }
 
-        # 预测
-        tau_pred = model.predict(X_scaled)
+        param_grid = {
+            'Ridge': {'alpha': [0.001, 0.01, 0.1, 1.0, 10.0]},
+            'Lasso': {'alpha': [0.001, 0.01, 0.1, 1.0]},
+            'ElasticNet': {'alpha': [0.001, 0.01, 0.1], 'l1_ratio': [0.1, 0.5, 0.9]}
+        }
+
+        best_model = None
+        best_score = -np.inf
+        best_params = None
+        best_model_name = None
+
+        # 网格搜索选择最佳模型
+        for model_name in models:
+            print(f"  测试 {model_name} 模型...")
+            grid_search = GridSearchCV(
+                models[model_name],
+                param_grid[model_name],
+                cv=5,
+                scoring='r2',
+                n_jobs=-1
+            )
+            grid_search.fit(X_scaled, y)
+
+            if grid_search.best_score_ > best_score:
+                best_score = grid_search.best_score_
+                best_model = grid_search.best_estimator_
+                best_params = grid_search.best_params_
+                best_model_name = model_name
+
+        print(f"  最佳模型: {best_model_name}")
+        print(f"  最佳参数: {best_params}")
+        print(f"  交叉验证R²: {best_score:.4f}")
+
+        # 使用最佳模型进行预测
+        tau_pred = best_model.predict(X_scaled)
 
         # 计算误差
         mse = mean_squared_error(y, tau_pred)
         rmse = np.sqrt(mse)
         r2 = r2_score(y, tau_pred)
 
-        print(f"RMS误差: {rmse:.6f}")
-        print(f"R²分数: {r2:.4f}")
+        print(f"  RMS误差: {rmse:.6f}")
+        print(f"  R²分数: {r2:.4f}")
 
-        # 输出参数
-        print(f"\n辨识参数:")
-        for i, (name, coef) in enumerate(zip(self.feature_names, model.coef_)):
-            print(f"  {name}: {coef:.6f}")
-        print(f"  截距: {model.intercept_:.6f}")
+        # 输出重要参数
+        print(f"\n  辨识参数:")
+        for i, (name, coef) in enumerate(zip(self.feature_names, best_model.coef_)):
+            if abs(coef) > 1e-6:  # 只显示非零参数
+                print(f"    {name}: {coef:.6f}")
+        print(f"    截距: {best_model.intercept_:.6f}")
 
         # 保存结果
         result = {
             'joint_id': joint_id,
-            'coefficients': model.coef_,
-            'intercept': model.intercept_,
+            'coefficients': best_model.coef_,
+            'intercept': best_model.intercept_,
             'feature_names': self.feature_names,
             'rmse': rmse,
             'r2': r2,
-            'regularization': regularization,
-            'n_samples': len(q),
-            'position_range': [q.min(), q.max()],
-            'velocity_range': [dq.min(), dq.max()],
-            'torque_range': [tau.min(), tau.max()]
+            'model_name': best_model_name,
+            'best_params': best_params,
+            'cv_score': best_score,
+            'n_samples': len(q_proc),
+            'n_original_samples': len(q),
+            'position_range': [q_proc.min(), q_proc.max()],
+            'velocity_range': [dq_proc.min(), dq_proc.max()],
+            'torque_range': [tau_proc.min(), tau_proc.max()]
         }
 
-        return model, scaler, result
+        return best_model, scaler, result
 
     def identify_all_joints(self, data, regularization=0.1):
         """
@@ -170,10 +276,14 @@ class MultiJointIdentification:
             # 执行辨识
             model, scaler, result = self.identify_joint(joint_id, q, dq, ddq, tau, regularization)
 
-            # 保存模型和结果
-            self.models.append(model)
-            self.scalers.append(scaler)
-            self.identification_results.append(result)
+            if result is not None:
+                # 保存模型和结果
+                self.models.append(model)
+                self.scalers.append(scaler)
+                self.identification_results.append(result)
+            else:
+                print(f"  关节 {joint_id} 辨识失败")
+                self.identification_results.append(None)
 
         print(f"\n✓ 完成 {len(self.identification_results)} 个关节的辨识")
         return self.identification_results
@@ -316,33 +426,52 @@ class MultiJointIdentification:
         # 生成综合报告
         report_file = os.path.join(output_dir, f"multi_joint_report_{timestamp}.txt")
         with open(report_file, 'w', encoding='utf-8') as f:
-            f.write(f"=== Multi-Joint Dynamics Identification Report ===\n\n")
+            f.write(f"=== Multi-Joint Dynamics Identification Report (Improved) ===\n\n")
             f.write(f"Generation Time: {datetime.now()}\n")
             f.write(f"Number of Joints: {len(self.identification_results)}\n\n")
 
             for result in self.identification_results:
+                if result is None:
+                    continue
+
                 joint_id = result['joint_id']
                 f.write(f"【Joint {joint_id}】\n")
-                f.write(f"  Samples: {result['n_samples']}\n")
+                f.write(f"  Model: {result.get('model_name', 'Unknown')}\n")
+                f.write(f"  Best Parameters: {result.get('best_params', {})}\n")
+                f.write(f"  Cross-validation R²: {result.get('cv_score', 'N/A'):.4f}\n")
+                f.write(f"  Samples: {result['n_samples']} (from {result['n_original_samples']})\n")
                 f.write(f"  RMS Error: {result['rmse']:.6f}\n")
                 f.write(f"  R² Score: {result['r2']:.4f}\n")
-                f.write(f"  Position Range: [{result['position_range'][0]:.6f}, {result['position_range'][1]:.6f}] rad\n")
-                f.write(f"  Velocity Range: [{result['velocity_range'][0]:.6f}, {result['velocity_range'][1]:.6f}] rad/s\n")
+                f.write(f"  Position Range: [{np.degrees(result['position_range'][0]):.1f}°, {np.degrees(result['position_range'][1]):.1f}°]\n")
+                f.write(f"  Velocity Range: [{result['velocity_range'][0]:.3f}, {result['velocity_range'][1]:.3f}] rad/s\n")
                 f.write(f"  Torque Range: [{result['torque_range'][0]:.3f}, {result['torque_range'][1]:.3f}] Nm\n")
-                f.write(f"  Regularization: {result['regularization']}\n")
 
-                f.write(f"  Key Parameters:\n")
-                f.write(f"    sin_pos: {result['coefficients'][8]:.6f}\n")
-                f.write(f"    cos_pos: {result['coefficients'][9]:.6f}\n")
+                # 重要参数
+                f.write(f"  Significant Parameters:\n")
+                for i, (name, coef) in enumerate(zip(result['feature_names'], result['coefficients'])):
+                    if abs(coef) > 1e-6:  # 只显示非零参数
+                        f.write(f"    {name}: {coef:.6f}\n")
                 f.write(f"    intercept: {result['intercept']:.6f}\n\n")
 
             # 总体统计
-            avg_rmse = np.mean([r['rmse'] for r in self.identification_results])
-            avg_r2 = np.mean([r['r2'] for r in self.identification_results])
+            valid_results = [r for r in self.identification_results if r is not None]
+            if valid_results:
+                avg_rmse = np.mean([r['rmse'] for r in valid_results])
+                avg_r2 = np.mean([r['r2'] for r in valid_results])
+                avg_cv = np.mean([r.get('cv_score', r['r2']) for r in valid_results])
 
-            f.write("【Overall Statistics】\n")
-            f.write(f"  Average RMS Error: {avg_rmse:.6f}\n")
-            f.write(f"  Average R² Score: {avg_r2:.4f}\n")
+                f.write("【Overall Statistics】\n")
+                f.write(f"  Average RMS Error: {avg_rmse:.6f}\n")
+                f.write(f"  Average R² Score: {avg_r2:.4f}\n")
+                f.write(f"  Average CV R² Score: {avg_cv:.4f}\n")
+                f.write(f"  Successfully Identified Joints: {len(valid_results)}/{self.n_joints}\n")
+
+                # 模型使用统计
+                model_usage = {}
+                for r in valid_results:
+                    model_name = r.get('model_name', 'Unknown')
+                    model_usage[model_name] = model_usage.get(model_name, 0) + 1
+                f.write(f"  Model Usage: {model_usage}\n")
 
         print(f"结果已保存到: {output_dir}")
         return param_file, report_file

@@ -170,7 +170,7 @@ class MinimumGravityCompensation:
         # 如果输入是单点，返回一维数组
         if single_point:
             tau = tau.flatten()
-
+        # tau[0] += 10
         return tau
 
     def _calculate_torque_base_params(self, q, dq, ddq):
@@ -200,7 +200,7 @@ class MinimumGravityCompensation:
                 if j >= 6:  # 只处理前6个关节
                     break
 
-                coeffs = joint_result.get('coefficients', np.zeros(10))
+                coeffs = joint_result.get('coefficients', np.zeros(9))
                 intercept = joint_result.get('intercept', 0.0)
 
                 # 构建特征向量
@@ -219,24 +219,23 @@ class MinimumGravityCompensation:
             1.0,                    # constant
             vel,                    # velocity
             acc,                    # acceleration
-            np.sign(vel) if vel != 0 else 0,  # velocity_sign
-            pos * vel,              # pos_vel
-            pos * acc,              # pos_acc
-            vel * acc,              # vel_acc
-            vel ** 2,               # vel_squared
+            np.sign(vel) if vel != 0 else 0,  # smooth_velocity_sign
             np.sin(pos),            # sin_pos
-            np.cos(pos)             # cos_pos
+            vel ** 2,               # vel_squared
+            vel ** 3,               # vel_cubed
+            pos * vel,              # pos_vel
+            np.cos(pos) * acc       # cos_pos_acc
         ])
     
     def calculate_gravity_torque(self, q):
         """
         计算重力力矩 (加速度为0)
-        
+
         Args:
-            q: 关节位置 (5,) 或 (N, 5)
-            
+            q: 关节位置 (6,) 或 (N, 6)
+
         Returns:
-            tau_g: 重力力矩 (5,) 或 (N, 5)
+            tau_g: 重力力矩 (6,) 或 (N, 6)
         """
         # 转换为numpy数组
         q = np.asarray(q, dtype=np.float64)

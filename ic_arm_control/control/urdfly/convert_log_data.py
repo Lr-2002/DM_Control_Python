@@ -94,10 +94,16 @@ def convert_log_dir_to_dynamics(log_dir, output_file):
 def main():
     """Main conversion function"""
     log_dirs = [
-        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_171020",
-        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_170759",
-        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_170840",
-        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_170933"
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_171020",
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_170759",
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_170840",
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_170933",
+        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_210525",
+        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_210408",
+        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_214524",
+        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_214427",
+        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_220012",
+        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_222206"
     ]
 
     output_dir = "/Users/lr-2002/project/instantcreation/IC_arm_control/dyn_ana"

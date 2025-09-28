@@ -141,6 +141,223 @@ class ExcitationTrajectoryGenerator:
 
         return q
 
+    def _multi_frequency_trajectory(self, t: np.ndarray, params: np.ndarray,
+                                 frequencies: List[float], duration: float = 10.0) -> np.ndarray:
+        """
+        生成多频率正弦轨迹（多个不同频率的正弦波叠加）
+
+        Args:
+            t: 时间数组
+            params: 参数数组 [a0, A1, φ1, A2, φ2, ...]
+            frequencies: 频率列表 [f1, f2, ...]
+            duration: 轨迹周期
+
+        Returns:
+            关节位置数组
+        """
+        a0 = params[0]
+        q = a0 * np.ones_like(t)
+
+        for i, freq in enumerate(frequencies):
+            if 2*i + 1 < len(params):
+                amplitude = params[2*i + 1]
+                phase = params[2*i + 2] if 2*i + 2 < len(params) else 0
+                q += amplitude * np.sin(2 * np.pi * freq * t + phase)
+
+        return q
+
+    def _swept_sine_trajectory(self, t: np.ndarray, params: np.ndarray,
+                              f_start: float, f_end: float, duration: float = 10.0) -> np.ndarray:
+        """
+        生成扫频正弦轨迹（chirp信号）
+
+        Args:
+            t: 时间数组
+            params: 参数数组 [a0, A, φ]
+            f_start: 起始频率
+            f_end: 结束频率
+            duration: 轨迹周期
+
+        Returns:
+            关节位置数组
+        """
+        a0 = params[0]
+        amplitude = params[1] if len(params) > 1 else 1.0
+        phase = params[2] if len(params) > 2 else 0
+
+        # 使用scipy的chirp函数
+        q = a0 + amplitude * chirp(t, f_start, duration, f_end, method='linear', phi=phase)
+
+        return q
+
+    def _phase_modulated_trajectory(self, t: np.ndarray, params: np.ndarray,
+                                   carrier_freq: float, mod_freq: float,
+                                   duration: float = 10.0) -> np.ndarray:
+        """
+        生成相位调制轨迹
+
+        Args:
+            t: 时间数组
+            params: 参数数组 [a0, A_carrier, A_mod, φ]
+            carrier_freq: 载波频率
+            mod_freq: 调制频率
+            duration: 轨迹周期
+
+        Returns:
+            关节位置数组
+        """
+        a0 = params[0]
+        A_carrier = params[1] if len(params) > 1 else 1.0
+        A_mod = params[2] if len(params) > 2 else 0.5
+        phase = params[3] if len(params) > 3 else 0
+
+        # 相位调制信号
+        mod_signal = A_mod * np.sin(2 * np.pi * mod_freq * t)
+        q = a0 + A_carrier * np.sin(2 * np.pi * carrier_freq * t + mod_signal + phase)
+
+        return q
+
+    def _sum_of_sines_trajectory(self, t: np.ndarray, params: np.ndarray,
+                               num_components: int = 5, duration: float = 10.0) -> np.ndarray:
+        """
+        生成多分量正弦和轨迹（随机频率的正弦波叠加）
+
+        Args:
+            t: 时间数组
+            params: 参数数组 [a0, A1, f1, φ1, A2, f2, φ2, ...]
+            num_components: 正弦分量数量
+            duration: 轨迹周期
+
+        Returns:
+            关节位置数组
+        """
+        a0 = params[0]
+        q = a0 * np.ones_like(t)
+
+        for i in range(num_components):
+            idx = 3*i + 1
+            if idx + 2 < len(params):
+                amplitude = params[idx]
+                frequency = params[idx + 1]
+                phase = params[idx + 2]
+                q += amplitude * np.sin(2 * np.pi * frequency * t + phase)
+
+        return q
+
+    def _pseudo_random_trajectory(self, t: np.ndarray, params: np.ndarray,
+                                 num_harmonics: int = 10, duration: float = 10.0) -> np.ndarray:
+        """
+        生成伪随机多频轨迹（使用傅里叶级数模拟随机信号）
+
+        Args:
+            t: 时间数组
+            params: 参数数组 [a0, A1, φ1, A2, φ2, ...]
+            num_harmonics: 谐波数量
+            duration: 轨迹周期
+
+        Returns:
+            关节位置数组
+        """
+        omega0 = 2 * np.pi / duration
+
+        a0 = params[0]
+        q = a0 * np.ones_like(t)
+
+        for i in range(num_harmonics):
+            idx = 2*i + 1
+            if idx + 1 < len(params):
+                amplitude = params[idx]
+                phase = params[idx + 1]
+                # 使用谐波频率
+                k = i + 1
+                q += amplitude * np.sin(k * omega0 * t + phase)
+
+        return q
+
+    def _schroeder_trajectory(self, t: np.ndarray, params: np.ndarray,
+                            num_harmonics: int = 10, duration: float = 10.0) -> np.ndarray:
+        """
+        生成Schroeder相位轨迹（具有低峰值的激励信号）
+
+        Args:
+            t: 时间数组
+            params: 参数数组 [a0, A]
+            num_harmonics: 谐波数量
+            duration: 轨迹周期
+
+        Returns:
+            关节位置数组
+        """
+        omega0 = 2 * np.pi / duration
+
+        a0 = params[0]
+        amplitude = params[1] if len(params) > 1 else 1.0
+
+        q = a0 * np.ones_like(t)
+
+        for k in range(1, num_harmonics + 1):
+            # Schroeder相位：使信号具有较低峰值因子
+            phi_k = np.pi * k * (k - 1) / num_harmonics
+            q += (amplitude / k) * np.sin(k * omega0 * t + phi_k)
+
+        return q
+
+    def _gaussian_modulated_trajectory(self, t: np.ndarray, params: np.ndarray,
+                                    center_freq: float, bandwidth: float,
+                                    duration: float = 10.0) -> np.ndarray:
+        """
+        生成高斯调频轨迹（高斯包络调制的正弦波）
+
+        Args:
+            t: 时间数组
+            params: 参数数组 [a0, A]
+            center_freq: 中心频率
+            bandwidth: 带宽
+            duration: 轨迹周期
+
+        Returns:
+            关节位置数组
+        """
+        a0 = params[0]
+        amplitude = params[1] if len(params) > 1 else 1.0
+
+        # 高斯包络
+        envelope = np.exp(-((t - duration/2)**2) / (2 * (duration/bandwidth)**2))
+
+        # 调制信号
+        q = a0 + amplitude * envelope * np.sin(2 * np.pi * center_freq * t)
+
+        return q
+
+    def _exponential_chirp_trajectory(self, t: np.ndarray, params: np.ndarray,
+                                     f_start: float, f_end: float,
+                                     duration: float = 10.0) -> np.ndarray:
+        """
+        生成指数扫频轨迹
+
+        Args:
+            t: 时间数组
+            params: 参数数组 [a0, A, φ]
+            f_start: 起始频率
+            f_end: 结束频率
+            duration: 轨迹周期
+
+        Returns:
+            关节位置数组
+        """
+        a0 = params[0]
+        amplitude = params[1] if len(params) > 1 else 1.0
+        phase = params[2] if len(params) > 2 else 0
+
+        # 指数扫频
+        k = (f_end / f_start) ** (1 / duration)
+        instantaneous_freq = f_start * (k ** t)
+        phase_integral = np.cumsum(instantaneous_freq) * (t[1] - t[0]) if len(t) > 1 else 0
+
+        q = a0 + amplitude * np.sin(2 * np.pi * phase_integral + phase)
+
+        return q
+
     def _calculate_trajectory_derivatives(self, t: np.ndarray, q: np.ndarray,
                                        params: np.ndarray, num_harmonics: int,
                                        duration: float) -> Tuple[np.ndarray, np.ndarray]:
@@ -192,17 +409,36 @@ class ExcitationTrajectoryGenerator:
         return -excitation_quality  # 最小化负质量等价于最大化质量
 
     def _generate_initial_params(self, joint_idx: int, num_harmonics: int) -> np.ndarray:
-        """生成初始参数"""
+        """生成初始参数，考虑速度限制但最大化激励效果"""
         safe_limits = self.safe_joint_limits[joint_idx]
         center = (safe_limits['lower'] + safe_limits['upper']) / 2
-        amplitude = safe_limits['range'] / 4  # 使用安全范围的1/4作为幅度
+        max_velocity = safe_limits['velocity']
+
+        # 基于位置限制的最大幅度
+        position_amplitude = safe_limits['range'] / 2.2  # 使用安全范围的45%
+
+        # 基于速度限制的最大幅度（使用主要频率0.5Hz计算）
+        primary_frequency = 0.5  # Hz
+        omega_primary = 2 * np.pi * primary_frequency
+        safety_factor = 1.5  # 使用更保守的安全余量
+        velocity_amplitude = max_velocity / (omega_primary * safety_factor)
+
+        # 取较小的一个作为最终幅度，但确保足够大
+        amplitude = min(position_amplitude, velocity_amplitude)
+        amplitude = max(amplitude, 0.3)  # 确保最小振幅
 
         params = [center]  # a0: 中心位置
 
         # 添加谐波参数
         for k in range(1, num_harmonics + 1):
-            # 幅度随着谐波次数递减
-            harmonic_amp = amplitude / (k + 1)
+            # 幅度随着谐波次数递减，但考虑速度限制
+            freq = k * 0.3  # 降低基频到0.3Hz，减少高频的速度影响
+            omega = 2 * np.pi * freq
+            # 使用更合理的安全余量
+            harmonic_safety_factor = 1.2 + (k - 1) * 0.1  # 高次谐波增加安全余量
+            max_harmonic_amp = max_velocity / (omega * harmonic_safety_factor)
+            # 减缓衰减速度，保持更多高频成分
+            harmonic_amp = min(amplitude / (k ** 0.5), max_harmonic_amp)
             params.append(harmonic_amp)  # a_k
             params.append(harmonic_amp)  # b_k
 
@@ -398,6 +634,345 @@ class ExcitationTrajectoryGenerator:
             'num_harmonics': num_harmonics
         }
 
+    def generate_multi_frequency_trajectory(self, duration: float = 15.0,
+                                          frequency_sets: List[List[float]] = None) -> Dict:
+        """
+        生成多频率激励轨迹（使用多个不同频率的正弦波）
+
+        Args:
+            duration: 轨迹持续时间
+            frequency_sets: 每个关节的频率集合列表
+
+        Returns:
+            多频率轨迹字典
+        """
+        print(f"\n=== 生成多频率激励轨迹 ===")
+
+        if frequency_sets is None:
+            # 默认频率设置
+            frequency_sets = [
+                [0.1, 0.3, 0.5],      # 关节1
+                [0.15, 0.35, 0.55],   # 关节2
+                [0.2, 0.4, 0.6],      # 关节3
+                [0.25, 0.45, 0.65],   # 关节4
+                [0.12, 0.32, 0.52],   # 关节5
+                [0.18, 0.38, 0.58]    # 关节6
+            ]
+
+        dt = 0.001
+        t = np.arange(0, duration, dt)
+
+        positions = np.zeros((len(t), self.num_joints))
+        velocities = np.zeros((len(t), self.num_joints))
+        accelerations = np.zeros((len(t), self.num_joints))
+
+        for joint_idx in range(self.num_joints):
+            if joint_idx < len(frequency_sets):
+                frequencies = frequency_sets[joint_idx]
+
+                # 生成初始参数
+                safe_limits = self.safe_joint_limits[joint_idx]
+                center = (safe_limits['lower'] + safe_limits['upper']) / 2
+                amplitude = safe_limits['range'] / 6
+
+                params = [center]
+                for freq in frequencies:
+                    params.append(amplitude)
+                    params.append(0)  # 相位
+
+                # 生成轨迹
+                q = self._multi_frequency_trajectory(t, params, frequencies, duration)
+
+                # 计算导数
+                dq = np.gradient(q, dt)
+                ddq = np.gradient(dq, dt)
+
+                positions[:, joint_idx] = q
+                velocities[:, joint_idx] = dq
+                accelerations[:, joint_idx] = ddq
+
+        return {
+            'time': t,
+            'positions': positions,
+            'velocities': velocities,
+            'accelerations': accelerations,
+            'duration': duration,
+            'frequency_sets': frequency_sets,
+            'trajectory_type': 'multi_frequency'
+        }
+
+    def generate_chirp_trajectory(self, duration: float = 15.0,
+                                 f_start: float = 0.05, f_end: float = 2.0) -> Dict:
+        """
+        生成扫频（chirp）激励轨迹
+
+        Args:
+            duration: 轨迹持续时间
+            f_start: 起始频率 (Hz)
+            f_end: 结束频率 (Hz)
+
+        Returns:
+            扫频轨迹字典
+        """
+        print(f"\n=== 生成扫频激励轨迹 ===")
+        print(f"频率范围: {f_start} Hz → {f_end} Hz")
+
+        dt = 0.001
+        t = np.arange(0, duration, dt)
+
+        positions = np.zeros((len(t), self.num_joints))
+        velocities = np.zeros((len(t), self.num_joints))
+        accelerations = np.zeros((len(t), self.num_joints))
+
+        for joint_idx in range(self.num_joints):
+            safe_limits = self.safe_joint_limits[joint_idx]
+            center = (safe_limits['lower'] + safe_limits['upper']) / 2
+            amplitude = safe_limits['range'] / 4
+
+            params = [center, amplitude, 0]  # [a0, A, φ]
+
+            # 生成扫频轨迹（每个关节使用不同的频率范围）
+            joint_f_start = f_start * (1 + joint_idx * 0.2)
+            joint_f_end = f_end * (1 + joint_idx * 0.2)
+
+            q = self._swept_sine_trajectory(t, params, joint_f_start, joint_f_end, duration)
+
+            # 计算导数
+            dq = np.gradient(q, dt)
+            ddq = np.gradient(dq, dt)
+
+            positions[:, joint_idx] = q
+            velocities[:, joint_idx] = dq
+            accelerations[:, joint_idx] = ddq
+
+        return {
+            'time': t,
+            'positions': positions,
+            'velocities': velocities,
+            'accelerations': accelerations,
+            'duration': duration,
+            'f_start': f_start,
+            'f_end': f_end,
+            'trajectory_type': 'chirp'
+        }
+
+    def generate_schroeder_trajectory(self, duration: float = 15.0,
+                                      num_harmonics: int = 15) -> Dict:
+        """
+        生成Schroeder相位轨迹（低峰值激励信号）
+
+        Args:
+            duration: 轨迹持续时间
+            num_harmonics: 谐波数量
+
+        Returns:
+            Schroeder轨迹字典
+        """
+        print(f"\n=== 生成Schroeder相位轨迹 ===")
+        print(f"谐波数量: {num_harmonics}")
+
+        dt = 0.001
+        t = np.arange(0, duration, dt)
+
+        positions = np.zeros((len(t), self.num_joints))
+        velocities = np.zeros((len(t), self.num_joints))
+        accelerations = np.zeros((len(t), self.num_joints))
+
+        for joint_idx in range(self.num_joints):
+            safe_limits = self.safe_joint_limits[joint_idx]
+            center = (safe_limits['lower'] + safe_limits['upper']) / 2
+            amplitude = safe_limits['range'] / 3
+
+            params = [center, amplitude]
+
+            q = self._schroeder_trajectory(t, params, num_harmonics, duration)
+
+            # 计算导数
+            dq = np.gradient(q, dt)
+            ddq = np.gradient(dq, dt)
+
+            positions[:, joint_idx] = q
+            velocities[:, joint_idx] = dq
+            accelerations[:, joint_idx] = ddq
+
+        return {
+            'time': t,
+            'positions': positions,
+            'velocities': velocities,
+            'accelerations': accelerations,
+            'duration': duration,
+            'num_harmonics': num_harmonics,
+            'trajectory_type': 'schroeder'
+        }
+
+    def generate_pseudo_random_trajectory(self, duration: float = 20.0,
+                                         num_harmonics: int = 20) -> Dict:
+        """
+        生成伪随机多频激励轨迹
+
+        Args:
+            duration: 轨迹持续时间
+            num_harmonics: 谐波数量
+
+        Returns:
+            伪随机轨迹字典
+        """
+        print(f"\n=== 生成伪随机多频轨迹 ===")
+        print(f"谐波数量: {num_harmonics}")
+
+        dt = 0.001
+        t = np.arange(0, duration, dt)
+
+        positions = np.zeros((len(t), self.num_joints))
+        velocities = np.zeros((len(t), self.num_joints))
+        accelerations = np.zeros((len(t), self.num_joints))
+
+        np.random.seed(42)  # 固定随机种子保证可重复性
+
+        for joint_idx in range(self.num_joints):
+            safe_limits = self.safe_joint_limits[joint_idx]
+            center = (safe_limits['lower'] + safe_limits['upper']) / 2
+            amplitude = safe_limits['range'] / 4
+
+            params = [center]
+            for i in range(num_harmonics):
+                params.append(amplitude * np.random.uniform(0.1, 1.0))
+                params.append(np.random.uniform(0, 2*np.pi))
+
+            q = self._pseudo_random_trajectory(t, params, num_harmonics, duration)
+
+            # 计算导数
+            dq = np.gradient(q, dt)
+            ddq = np.gradient(dq, dt)
+
+            positions[:, joint_idx] = q
+            velocities[:, joint_idx] = dq
+            accelerations[:, joint_idx] = ddq
+
+        return {
+            'time': t,
+            'positions': positions,
+            'velocities': velocities,
+            'accelerations': accelerations,
+            'duration': duration,
+            'num_harmonics': num_harmonics,
+            'trajectory_type': 'pseudo_random'
+        }
+
+    def generate_phase_modulated_trajectory(self, duration: float = 15.0,
+                                          carrier_freq: float = 1.0,
+                                          mod_freq: float = 0.1) -> Dict:
+        """
+        生成相位调制激励轨迹
+
+        Args:
+            duration: 轨迹持续时间
+            carrier_freq: 载波频率 (Hz)
+            mod_freq: 调制频率 (Hz)
+
+        Returns:
+            相位调制轨迹字典
+        """
+        print(f"\n=== 生成相位调制激励轨迹 ===")
+        print(f"载波频率: {carrier_freq} Hz, 调制频率: {mod_freq} Hz")
+
+        dt = 0.001
+        t = np.arange(0, duration, dt)
+
+        positions = np.zeros((len(t), self.num_joints))
+        velocities = np.zeros((len(t), self.num_joints))
+        accelerations = np.zeros((len(t), self.num_joints))
+
+        for joint_idx in range(self.num_joints):
+            safe_limits = self.safe_joint_limits[joint_idx]
+            center = (safe_limits['lower'] + safe_limits['upper']) / 2
+            carrier_amp = safe_limits['range'] / 6
+            mod_amp = safe_limits['range'] / 12
+
+            params = [center, carrier_amp, mod_amp, 0]
+
+            # 每个关节使用不同的载波频率
+            joint_carrier_freq = carrier_freq * (1 + joint_idx * 0.3)
+            joint_mod_freq = mod_freq * (1 + joint_idx * 0.2)
+
+            q = self._phase_modulated_trajectory(t, params, joint_carrier_freq, joint_mod_freq, duration)
+
+            # 计算导数
+            dq = np.gradient(q, dt)
+            ddq = np.gradient(dq, dt)
+
+            positions[:, joint_idx] = q
+            velocities[:, joint_idx] = dq
+            accelerations[:, joint_idx] = ddq
+
+        return {
+            'time': t,
+            'positions': positions,
+            'velocities': velocities,
+            'accelerations': accelerations,
+            'duration': duration,
+            'carrier_freq': carrier_freq,
+            'mod_freq': mod_freq,
+            'trajectory_type': 'phase_modulated'
+        }
+
+    def generate_sum_of_sines_trajectory(self, duration: float = 18.0,
+                                        num_components: int = 8) -> Dict:
+        """
+        生成多分量正弦和轨迹
+
+        Args:
+            duration: 轨迹持续时间
+            num_components: 正弦分量数量
+
+        Returns:
+            正弦和轨迹字典
+        """
+        print(f"\n=== 生成多分量正弦和轨迹 ===")
+        print(f"正弦分量数量: {num_components}")
+
+        dt = 0.001
+        t = np.arange(0, duration, dt)
+
+        positions = np.zeros((len(t), self.num_joints))
+        velocities = np.zeros((len(t), self.num_joints))
+        accelerations = np.zeros((len(t), self.num_joints))
+
+        np.random.seed(123)  # 固定随机种子
+
+        for joint_idx in range(self.num_joints):
+            safe_limits = self.safe_joint_limits[joint_idx]
+            center = (safe_limits['lower'] + safe_limits['upper']) / 2
+            max_amplitude = safe_limits['range'] / (num_components * 2)
+
+            params = [center]
+            for i in range(num_components):
+                amplitude = max_amplitude * np.random.uniform(0.5, 1.0)
+                # 在不同频率范围内随机选择
+                frequency = np.random.uniform(0.05, 2.0)
+                phase = np.random.uniform(0, 2*np.pi)
+                params.extend([amplitude, frequency, phase])
+
+            q = self._sum_of_sines_trajectory(t, params, num_components, duration)
+
+            # 计算导数
+            dq = np.gradient(q, dt)
+            ddq = np.gradient(dq, dt)
+
+            positions[:, joint_idx] = q
+            velocities[:, joint_idx] = dq
+            accelerations[:, joint_idx] = ddq
+
+        return {
+            'time': t,
+            'positions': positions,
+            'velocities': velocities,
+            'accelerations': accelerations,
+            'duration': duration,
+            'num_components': num_components,
+            'trajectory_type': 'sum_of_sines'
+        }
+
     def save_trajectory(self, trajectory: Dict, filename: str):
         """保存轨迹到JSON文件"""
         # 如果是单关节轨迹，需要转换为多关节格式
@@ -513,7 +1088,7 @@ def main():
     urdf_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/urdfs/ic_arm_8_dof/urdf/ic_arm_8_dof.urdf"
 
     # 初始化生成器
-    generator = ExcitationTrajectoryGenerator(urdf_path, joint_margin=0.1)
+    generator = ExcitationTrajectoryGenerator(urdf_path, joint_margin=0.002)
 
     # 1. 生成多关节同时激励轨迹
     print("\n=== 1. 生成多关节同时激励轨迹 ===")
@@ -534,8 +1109,63 @@ def main():
     generator.save_trajectory(sequential_traj, "excitation_sequential.json")
     generator.print_trajectory_statistics(sequential_traj)
 
-    # 3. 为每个关节生成单独的优化轨迹
-    print("\n=== 3. 生成单独关节优化轨迹 ===")
+    # 3. 生成多频率激励轨迹（新的傅立叶相关轨迹）
+    print("\n=== 3. 生成多频率激励轨迹 ===")
+    multi_freq_traj = generator.generate_multi_frequency_trajectory(
+        duration=15.0
+    )
+    generator.save_trajectory(multi_freq_traj, "excitation_multi_frequency.json")
+    generator.print_trajectory_statistics(multi_freq_traj)
+
+    # 4. 生成扫频激励轨迹（chirp信号）
+    print("\n=== 4. 生成扫频激励轨迹 ===")
+    chirp_traj = generator.generate_chirp_trajectory(
+        duration=15.0,
+        f_start=0.05,
+        f_end=2.0
+    )
+    generator.save_trajectory(chirp_traj, "excitation_chirp.json")
+    generator.print_trajectory_statistics(chirp_traj)
+
+    # 5. 生成Schroeder相位轨迹（低峰值激励）
+    print("\n=== 5. 生成Schroeder相位轨迹 ===")
+    schroeder_traj = generator.generate_schroeder_trajectory(
+        duration=15.0,
+        num_harmonics=15
+    )
+    generator.save_trajectory(schroeder_traj, "excitation_schroeder.json")
+    generator.print_trajectory_statistics(schroeder_traj)
+
+    # 6. 生成伪随机多频轨迹
+    print("\n=== 6. 生成伪随机多频轨迹 ===")
+    pseudo_random_traj = generator.generate_pseudo_random_trajectory(
+        duration=20.0,
+        num_harmonics=20
+    )
+    generator.save_trajectory(pseudo_random_traj, "excitation_pseudo_random.json")
+    generator.print_trajectory_statistics(pseudo_random_traj)
+
+    # 7. 生成相位调制轨迹
+    print("\n=== 7. 生成相位调制轨迹 ===")
+    phase_mod_traj = generator.generate_phase_modulated_trajectory(
+        duration=15.0,
+        carrier_freq=1.0,
+        mod_freq=0.1
+    )
+    generator.save_trajectory(phase_mod_traj, "excitation_phase_modulated.json")
+    generator.print_trajectory_statistics(phase_mod_traj)
+
+    # 8. 生成多分量正弦和轨迹
+    print("\n=== 8. 生成多分量正弦和轨迹 ===")
+    sum_of_sines_traj = generator.generate_sum_of_sines_trajectory(
+        duration=18.0,
+        num_components=8
+    )
+    generator.save_trajectory(sum_of_sines_traj, "excitation_sum_of_sines.json")
+    generator.print_trajectory_statistics(sum_of_sines_traj)
+
+    # 9. 为每个关节生成单独的优化轨迹
+    print("\n=== 9. 生成单独关节优化轨迹 ===")
     for joint_idx in range(generator.num_joints):
         single_traj = generator.optimize_single_joint_trajectory(
             joint_idx=joint_idx,
@@ -551,8 +1181,8 @@ def main():
         print(f"Joint {joint_idx + 1}: 范围 [{pos_range[0]:.3f}, {pos_range[1]:.3f}] rad, "
               f"最大速度 {vel_max:.3f} rad/s")
 
-    # 4. 生成不同持续时间的轨迹
-    print("\n=== 4. 生成不同持续时间的轨迹 ===")
+    # 10. 生成不同持续时间的轨迹
+    print("\n=== 10. 生成不同持续时间的轨迹 ===")
     for duration in [10.0, 20.0, 30.0]:
         duration_traj = generator.generate_multi_joint_trajectory(
             duration=duration,
@@ -566,13 +1196,27 @@ def main():
     print("生成的文件:")
     print("- excitation_multi_joint_simultaneous.json (多关节同时运动)")
     print("- excitation_sequential.json (序列运动)")
+    print("- excitation_multi_frequency.json (多频率正弦波叠加)")
+    print("- excitation_chirp.json (扫频信号)")
+    print("- excitation_schroeder.json (Schroeder低峰值激励)")
+    print("- excitation_pseudo_random.json (伪随机多频)")
+    print("- excitation_phase_modulated.json (相位调制)")
+    print("- excitation_sum_of_sines.json (多分量正弦和)")
     for i in range(generator.num_joints):
         print(f"- excitation_joint_{i + 1}_optimized.json (关节{i + 1}单独优化)")
     for duration in [10.0, 20.0, 30.0]:
         print(f"- excitation_multi_joint_{duration:.0f}s.json ({duration}s多关节运动)")
 
-    print(f"\n总计生成了 {3 + generator.num_joints + 3} 个激励轨迹文件！")
-    print("所有轨迹都应用了10%的关节余量，确保在安全范围内运行。")
+    print(f"\n总计生成了 {8 + generator.num_joints + 3} 个激励轨迹文件！")
+    print("所有轨迹都应用了安全的关节余量，确保在安全范围内运行。")
+
+    print("\n=== 新增的傅立叶相关轨迹特点 ===")
+    print("1. 多频率轨迹: 使用多个固定频率的正弦波叠加，提供丰富的频率激励")
+    print("2. 扫频轨迹: 频率随时间线性变化，覆盖宽频带")
+    print("3. Schroeder轨迹: 具有低峰值因子的多频信号，减少驱动器饱和风险")
+    print("4. 伪随机轨迹: 模拟随机激励但保持可重复性")
+    print("5. 相位调制轨迹: 载波信号被低频信号调制，产生复杂频谱")
+    print("6. 多分量正弦和: 随机频率和幅度的多个正弦波叠加")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,136 @@
+=== Multi-Joint Dynamics Identification Report (Improved) ===
+
+Generation Time: 2025-09-28 22:13:21.447328
+Number of Joints: 6
+
+【Joint 1】
+  Model: ElasticNet
+  Best Parameters: {'alpha': 0.1, 'l1_ratio': 0.1}
+  Cross-validation R²: -0.0933
+  Samples: 20018 (from 32005)
+  RMS Error: 5.298450
+  R² Score: 0.2891
+  Position Range: [-28.1°, 13.5°]
+  Velocity Range: [-3.901, 1.911] rad/s
+  Torque Range: [-29.744, 6.398] Nm
+  Significant Parameters:
+    velocity: 0.250312
+    acceleration: 0.130874
+    smooth_velocity_sign: 2.004298
+    sin_pos: 2.680310
+    vel_squared: -0.037133
+    vel_cubed: -0.000398
+    pos_vel: 0.111900
+    cos_pos_acc: 0.061700
+    intercept: -5.297353
+
+【Joint 2】
+  Model: ElasticNet
+  Best Parameters: {'alpha': 0.1, 'l1_ratio': 0.1}
+  Cross-validation R²: 0.2722
+  Samples: 16485 (from 32005)
+  RMS Error: 3.002004
+  R² Score: 0.3383
+  Position Range: [-97.7°, 23.0°]
+  Velocity Range: [-4.850, 4.596] rad/s
+  Torque Range: [-11.048, 10.579] Nm
+  Significant Parameters:
+    velocity: 0.973739
+    acceleration: 1.260526
+    smooth_velocity_sign: -0.574630
+    sin_pos: 0.576703
+    vel_squared: -0.063183
+    vel_cubed: -0.006493
+    pos_vel: -0.152119
+    cos_pos_acc: -0.044709
+    intercept: -0.050054
+
+【Joint 3】
+  Model: ElasticNet
+  Best Parameters: {'alpha': 0.1, 'l1_ratio': 0.1}
+  Cross-validation R²: 0.3260
+  Samples: 18454 (from 32005)
+  RMS Error: 3.769968
+  R² Score: 0.3886
+  Position Range: [-23.0°, 62.8°]
+  Velocity Range: [-4.557, 3.082] rad/s
+  Torque Range: [-14.330, 17.143] Nm
+  Significant Parameters:
+    velocity: 1.017879
+    acceleration: 0.611809
+    smooth_velocity_sign: -0.903894
+    sin_pos: 2.260598
+    vel_squared: 0.155558
+    vel_cubed: -0.000068
+    pos_vel: 0.254059
+    cos_pos_acc: 0.295154
+    intercept: 2.278430
+
+【Joint 4】
+  Model: Lasso
+  Best Parameters: {'alpha': 0.01}
+  Cross-validation R²: 0.7670
+  Samples: 27116 (from 32005)
+  RMS Error: 1.223628
+  R² Score: 0.8027
+  Position Range: [-174.2°, 153.1°]
+  Velocity Range: [-5.717, 5.785] rad/s
+  Torque Range: [-9.689, 9.197] Nm
+  Significant Parameters:
+    velocity: 1.453211
+    acceleration: 0.687786
+    smooth_velocity_sign: 1.286836
+    sin_pos: 0.072177
+    vel_squared: -0.070203
+    vel_cubed: -0.018989
+    pos_vel: -0.008790
+    cos_pos_acc: -0.135672
+    intercept: -0.959749
+
+【Joint 5】
+  Model: Lasso
+  Best Parameters: {'alpha': 0.01}
+  Cross-validation R²: 0.5442
+  Samples: 26591 (from 32005)
+  RMS Error: 1.417851
+  R² Score: 0.6134
+  Position Range: [-99.0°, 97.4°]
+  Velocity Range: [-5.805, 6.234] rad/s
+  Torque Range: [-8.540, 5.915] Nm
+  Significant Parameters:
+    velocity: 0.769303
+    acceleration: 0.492339
+    smooth_velocity_sign: 1.284371
+    sin_pos: 1.270956
+    vel_squared: -0.002269
+    vel_cubed: -0.002949
+    pos_vel: 0.056109
+    intercept: -1.610308
+
+【Joint 6】
+  Model: Ridge
+  Best Parameters: {'alpha': 0.001}
+  Cross-validation R²: 0.6541
+  Samples: 26479 (from 32005)
+  RMS Error: 0.131511
+  R² Score: 0.6761
+  Position Range: [-118.3°, 120.2°]
+  Velocity Range: [-9.663, 14.659] rad/s
+  Torque Range: [-0.999, 0.974] Nm
+  Significant Parameters:
+    velocity: 0.054635
+    acceleration: 0.041779
+    smooth_velocity_sign: 0.270482
+    sin_pos: 0.059095
+    vel_squared: -0.000820
+    vel_cubed: -0.000161
+    pos_vel: -0.006583
+    cos_pos_acc: 0.016270
+    intercept: -0.040135
+
+【Overall Statistics】
+  Average RMS Error: 2.473902
+  Average R² Score: 0.5181
+  Average CV R² Score: 0.4117
+  Successfully Identified Joints: 6/6
+  Model Usage: {'ElasticNet': 3, 'Lasso': 2, 'Ridge': 1}

@@ -1,0 +1,16 @@
+{
+  "compensation_gain": 1.0,
+  "velocity_damping": 0.1,
+  "friction_compensation": 0.0,
+  "performance_stats": {
+    "compensation_count": 101,
+    "total_computation_time": 0.000667572021484375,
+    "avg_computation_time": 6.609623975092822e-06,
+    "max_computation_time": 0.0004932880401611328,
+    "enable_compensation": true,
+    "compensation_gain": 1.0,
+    "velocity_damping": 0.1,
+    "friction_compensation": 0.0,
+    "last_timestamp": 1759064222.6157582
+  }
+}

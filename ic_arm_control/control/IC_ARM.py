@@ -12,10 +12,10 @@ from typing import Dict, List, Optional, Tuple, Any, Union
 
 # Optional imports
 try:
-    import pysnooper
-    HAS_PYSNOOPER = True
+	import pysnooper
+	HAS_PYSNOOPER = True
 except ImportError:
-    HAS_PYSNOOPER = False
+	HAS_PYSNOOPER = False
 # 使用新的统一电机控制系统
 from ic_arm_control.control.unified_motor_control import (
 	DamiaoProtocol,
@@ -45,9 +45,9 @@ current_dir = Path(__file__).parent
 mlp_compensation_dir = current_dir / "mlp_compensation"
 urdfly_dir = current_dir / "urdfly"
 if mlp_compensation_dir.exists() and str(mlp_compensation_dir) not in sys.path:
-    sys.path.append(str(mlp_compensation_dir))
+	sys.path.append(str(mlp_compensation_dir))
 if urdfly_dir.exists() and str(urdfly_dir) not in sys.path:
-    sys.path.append(str(urdfly_dir))
+	sys.path.append(str(urdfly_dir))
 
 # 电机名称列表（排除servo电机）
 MOTOR_LIST = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8']
@@ -109,7 +109,7 @@ def validate_array(array: np.ndarray, expected_shape: Tuple, name: str) -> bool:
 class ICARM:
 	def __init__(
 		self, device_sn="F561E08C892274DB09496BCC1102DBC5", debug=False, gc=False,
-		gc_type="static", enable_buffered_control=True, control_freq=300
+		gc_type="dyn", enable_buffered_control=True, control_freq=300
 	):
 		"""Initialize IC ARM with unified motor control system"""
 		self.debug = debug
@@ -125,6 +125,7 @@ class ICARM:
 		self.motor_manager = MotorManager(usb_hw)
 
 		# 电机配置数据
+
 		# self.motors_data = [
 		# 	MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 80, 1.5),
 		# 	MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x02, 0x12, 40, 1.2),
@@ -142,7 +143,7 @@ class ICARM:
 			MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 0, 0),
 			MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 0, 0),
 			MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 0, 0),
-			MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 0, 0),
+			MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 0, 0.2),
 			MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 0, 0),
 			MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 0, 0),
 			MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0),
@@ -494,7 +495,7 @@ class ICARM:
 	# ========== LOW-LEVEL WRITE FUNCTIONS ==========
 
 	def _send_motor_command(
-		self, motor_id, position_rad=0.0, velocity_rad_s=0.0, torque_nm=0.0
+		self, motor_id, position_rad=0.0, velocity_rad_s=0.0, torque_nm=0.0, kp=None, kd=None
 	):
 		"""Send command to a single motor using unified interface"""
 		motor = self.motor_manager.get_motor(motor_id)
@@ -503,8 +504,12 @@ class ICARM:
 			return False
 		# if motor_id == 7 or motor_id==8 :
 		#     print("set_command", motor_id, position_rad, velocity_rad_s, motor_info.kp, motor_info.kd, torque_nm)
+		if kp is None:
+			kp = motor_info.kp
+		if kd is None:
+			kd = motor_info.kd
 		return motor.set_command(
-			position_rad, velocity_rad_s, motor_info.kp, motor_info.kd, torque_nm
+			position_rad, velocity_rad_s, kp, kd, torque_nm
 		)
 
 	# ========== PUBLIC WRITE INTERFACES ==========
@@ -2173,11 +2178,13 @@ if __name__ == "__main__":
 		# # Move joint 0 to 30 degrees
 		# # arm.set_joint_positions_degrees([30, 0, 0, 0, 0])
 		# # time.sleep(2)
-		arm.switch_to_dyn_gravity_compensation()
+		# arm.switch_to_dyn_gravity_compensation()
 		while True:
 			
 			tau = arm.cal_gravity()
-			arm.set_joint_torque(tau)
+			pos = arm.get_joint_positions()
+			# arm.set_joint_torque(np.array(tau)*0.8)
+			# arm.set_joint_positions(positions_rad=pos, torques_nm=tau)
 			# print('all info is ', arm._read_all_states(refresh=False))
 			print('predicted tau is ', tau)
    
