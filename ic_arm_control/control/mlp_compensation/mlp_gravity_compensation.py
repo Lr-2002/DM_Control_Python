@@ -70,6 +70,10 @@ class LightweightMLPGravityCompensation:
         self.train_scores = []
         self.val_scores = []
 
+        # Enhanced training support
+        self.train_enhanced = False
+        self.enhanced_feature_dim = 12
+
     def train(self, positions, torques, velocities=None):
         """
         Train MLP models
@@ -175,6 +179,71 @@ class LightweightMLPGravityCompensation:
 
         torques = self.predict(joint_positions)
         return torques.flatten()
+
+    def predict_enhanced(self, enhanced_features):
+        """
+        Predict using enhanced features for improved performance
+
+        Args:
+            enhanced_features: Enhanced feature matrix (N, enhanced_feature_dim)
+
+        Returns:
+            predictions: Predicted torques (N, 6)
+        """
+        if not self.is_trained:
+            raise ValueError("Model not trained yet")
+
+        # Scale enhanced features
+        enhanced_features_scaled = self.input_scaler.transform(enhanced_features)
+
+        # Predict for each joint
+        predictions_scaled = np.zeros((len(enhanced_features), 6))
+        for i, mlp in enumerate(self.mlps):
+            predictions_scaled[:, i] = mlp.predict(enhanced_features_scaled)
+
+        # Inverse transform
+        predictions = self.output_scaler.inverse_transform(predictions_scaled)
+
+        # Apply safety limits
+        predictions = np.clip(predictions, -self.max_torque, self.max_torque)
+
+        return predictions
+
+    def enhance_features(self, positions, velocities):
+        """
+        Enhance input features for better Joint 1 modeling
+
+        Args:
+            positions: Joint positions (N, 6)
+            velocities: Joint velocities (N, 6)
+
+        Returns:
+            enhanced_features: Enhanced feature matrix (N, enhanced_feature_dim)
+        """
+        enhanced_features = []
+
+        # Original features
+        enhanced_features.append(positions)
+        enhanced_features.append(velocities)
+
+        # Joint 1 specific features
+        joint1_pos = positions[:, 0:1]
+        joint1_vel = velocities[:, 0:1]
+
+        # Non-linear features for Joint 1
+        enhanced_features.append(joint1_pos ** 2)  # Position squared
+        enhanced_features.append(joint1_vel ** 2)  # Velocity squared
+        enhanced_features.append(joint1_pos * joint1_vel)  # Cross term
+
+        # Sin/cos features for Joint 1 (helpful for rotational joints)
+        enhanced_features.append(np.sin(joint1_pos))
+        enhanced_features.append(np.cos(joint1_pos))
+
+        # Velocity direction for Joint 1
+        enhanced_features.append(np.sign(joint1_vel))
+
+        # Concatenate all features
+        return np.concatenate(enhanced_features, axis=1)
 
     def save_model(self, filepath):
         """Save trained model"""

@@ -189,8 +189,11 @@ class BufferControlThread:
                 self.missed_deadlines += 1
                 if self.missed_deadlines % 100 == 0:  # 每100次错过时警告一次
                     print(f"[BufferControlThread] ⚠️  错过截止时间: {self.missed_deadlines}次, 当前循环时间: {loop_time*1000:.2f}ms")
+                
         
         print("[BufferControlThread] 控制循环已退出")
+        print('[BufferControlThread] 总共执行时间为', self.total_time)
+        print('[BufferControlThread] 总共步长为', self.loop_count)
     
     def _send_to_hardware(self, command: dict):
         """
