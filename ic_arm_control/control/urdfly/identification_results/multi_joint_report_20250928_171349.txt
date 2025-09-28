@@ -1,0 +1,73 @@
+=== Multi-Joint Dynamics Identification Report ===
+
+Generation Time: 2025-09-28 17:13:49.209361
+Number of Joints: 5
+
+【Joint 1】
+  Samples: 15000
+  RMS Error: 2.557442
+  R² Score: 0.7799
+  Position Range: [-0.636492, 0.166896] rad
+  Velocity Range: [-0.738706, 0.421245] rad/s
+  Torque Range: [-27.985, -0.049] Nm
+  Regularization: 0.05
+  Key Parameters:
+    sin_pos: 9.777708
+    cos_pos: -7.366945
+    intercept: -19.287248
+
+【Joint 2】
+  Samples: 15000
+  RMS Error: 0.932354
+  R² Score: 0.7975
+  Position Range: [-1.967494, -0.041992] rad
+  Velocity Range: [-0.493284, 0.766789] rad/s
+  Torque Range: [-7.179, 3.311] Nm
+  Regularization: 0.05
+  Key Parameters:
+    sin_pos: 3.442789
+    cos_pos: -3.054566
+    intercept: -2.428308
+
+【Joint 3】
+  Samples: 15000
+  RMS Error: 1.382148
+  R² Score: 0.6992
+  Position Range: [-0.290493, 1.636542] rad
+  Velocity Range: [-1.606838, 1.460317] rad/s
+  Torque Range: [-1.612, 12.982] Nm
+  Regularization: 0.05
+  Key Parameters:
+    sin_pos: 1.762296
+    cos_pos: 0.407296
+    intercept: 8.037830
+
+【Joint 4】
+  Samples: 15000
+  RMS Error: 0.560451
+  R² Score: 0.8302
+  Position Range: [-1.853780, 1.669146] rad
+  Velocity Range: [-0.930403, 1.238095] rad/s
+  Torque Range: [-3.125, 2.892] Nm
+  Regularization: 0.05
+  Key Parameters:
+    sin_pos: 0.247916
+    cos_pos: -0.728443
+    intercept: -0.523734
+
+【Joint 5】
+  Samples: 15000
+  RMS Error: 0.719299
+  R² Score: 0.7271
+  Position Range: [-1.285763, 1.381132] rad
+  Velocity Range: [-1.330891, 1.316239] rad/s
+  Torque Range: [-4.410, 1.785] Nm
+  Regularization: 0.05
+  Key Parameters:
+    sin_pos: 0.629760
+    cos_pos: -0.288975
+    intercept: -2.250104
+
+【Overall Statistics】
+  Average RMS Error: 1.230339
+  Average R² Score: 0.7668

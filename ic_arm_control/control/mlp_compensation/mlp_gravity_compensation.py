@@ -28,7 +28,7 @@ import time
 class LightweightMLPGravityCompensation:
     """Lightweight MLP-based gravity compensation using scikit-learn"""
 
-    def __init__(self, hidden_layer_sizes=(100, 50), max_iter=500, random_state=42):
+    def __init__(self, hidden_layer_sizes=(100, 50), max_iter=500, random_state=42, max_torques=None):
         """
         Initialize lightweight MLP gravity compensation
 
@@ -36,11 +36,17 @@ class LightweightMLPGravityCompensation:
             hidden_layer_sizes: Tuple of hidden layer sizes
             max_iter: Maximum number of iterations
             random_state: Random seed for reproducibility
+            max_torques: List of maximum torque limits for each joint (Nm)
         """
         self.hidden_layer_sizes = hidden_layer_sizes
         self.max_iter = max_iter
         self.random_state = random_state
-        self.max_torque = 5.0  # Safety limit
+
+        # 设置力矩限制，默认使用指定的关节限制 [15, 12, 12, 4, 4, 3]
+        if max_torques is None:
+            self.max_torques = [15.0, 12.0, 12.0, 4.0, 4.0, 3.0]
+        else:
+            self.max_torques = max_torques[:6]  # 只取前6个关节
 
         # Initialize scalers
         self.input_scaler = RobustScaler()
@@ -159,8 +165,11 @@ class LightweightMLPGravityCompensation:
         # Inverse transform
         predictions = self.output_scaler.inverse_transform(predictions_scaled)
 
-        # Apply safety limits
-        predictions = np.clip(predictions, -self.max_torque, self.max_torque)
+        # Apply safety limits for each joint
+        for i in range(predictions.shape[1]):
+            if i < len(self.max_torques):
+                max_torque = self.max_torques[i]
+                predictions[:, i] = np.clip(predictions[:, i], -max_torque, max_torque)
 
         return predictions
 
@@ -204,8 +213,11 @@ class LightweightMLPGravityCompensation:
         # Inverse transform
         predictions = self.output_scaler.inverse_transform(predictions_scaled)
 
-        # Apply safety limits
-        predictions = np.clip(predictions, -self.max_torque, self.max_torque)
+        # Apply safety limits for each joint
+        for i in range(predictions.shape[1]):
+            if i < len(self.max_torques):
+                max_torque = self.max_torques[i]
+                predictions[:, i] = np.clip(predictions[:, i], -max_torque, max_torque)
 
         return predictions
 

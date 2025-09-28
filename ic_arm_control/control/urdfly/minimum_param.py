@@ -25,7 +25,7 @@ class MinimumParameterIdentification:
             regressor_lib_path: 动力学回归器库文件路径
         """
         if regressor_lib_path is None:
-            regressor_lib_path = '/Users/lr-2002/project/instantcreation/IC_arm_control/urdfly/dyn_regress.dylib'
+            regressor_lib_path = '/Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm_control/control/urdfly/dyn_regress.dylib'
         
         self.calc_dynamics = CalcDynamics(regressor_lib_path)
         self.n_joints = 5

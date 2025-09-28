@@ -9,7 +9,13 @@ import numpy as np
 import traceback
 import logging
 from typing import Dict, List, Optional, Tuple, Any, Union
-import pysnooper
+
+# Optional imports
+try:
+    import pysnooper
+    HAS_PYSNOOPER = True
+except ImportError:
+    HAS_PYSNOOPER = False
 # 使用新的统一电机控制系统
 from ic_arm_control.control.unified_motor_control import (
 	DamiaoProtocol,
@@ -31,6 +37,17 @@ from ic_arm_control.control.usb_hw_wrapper import USBHardwareWrapper
 from ic_arm_control.control.async_logger import AsyncLogManager
 from ic_arm_control.control.safety_monitor import SafetyMonitor
 from ic_arm_control.control.buffer_control_thread import BufferControlThread
+
+# 添加mlp_compensation和urdfly模块路径
+import sys
+from pathlib import Path
+current_dir = Path(__file__).parent
+mlp_compensation_dir = current_dir / "mlp_compensation"
+urdfly_dir = current_dir / "urdfly"
+if mlp_compensation_dir.exists() and str(mlp_compensation_dir) not in sys.path:
+    sys.path.append(str(mlp_compensation_dir))
+if urdfly_dir.exists() and str(urdfly_dir) not in sys.path:
+    sys.path.append(str(urdfly_dir))
 
 # 电机名称列表（排除servo电机）
 MOTOR_LIST = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8']
@@ -87,16 +104,19 @@ def validate_array(array: np.ndarray, expected_shape: Tuple, name: str) -> bool:
 	return True
 
 
+
+
 class ICARM:
 	def __init__(
-		self, device_sn="F561E08C892274DB09496BCC1102DBC5", debug=False, gc=False, 
-		enable_buffered_control=True, control_freq=300
+		self, device_sn="F561E08C892274DB09496BCC1102DBC5", debug=False, gc=False,
+		gc_type="static", enable_buffered_control=True, control_freq=300
 	):
 		"""Initialize IC ARM with unified motor control system"""
 		self.debug = debug
 		self.use_ht = True
 		self.enable_buffered_control = enable_buffered_control
 		self.control_freq = control_freq
+		self.gc_type = gc_type  # 存储重力补偿类型
 		debug_print("=== 初始化IC_ARM_Unified ===")
 
 		# 初始化统一电机控制系统
@@ -105,15 +125,26 @@ class ICARM:
 		self.motor_manager = MotorManager(usb_hw)
 
 		# 电机配置数据
+		# self.motors_data = [
+		# 	MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 80, 1.5),
+		# 	MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x02, 0x12, 40, 1.2),
+		# 	MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 60, 1.5),
+		# 	MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 40, 1),
+		# 	MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 40, 1),
+		# 	MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 30, 1),
+		# 	MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 8, 1.2),
+		# 	MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 8, 1.2),
+		# 	MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0),
+		# ]
 		self.motors_data = [
-			MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 80, 1.5),
-			MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x02, 0x12, 40, 1.2),
-			MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 60, 1.5),
-			MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 40, 1),
-			MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 40, 1),
-			MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 30, 1),
-			MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 8, 1.2),
-			MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 8, 1.2),
+			MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 0, 0),
+			MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x02, 0x12, 0, 0),
+			MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 0, 0),
+			MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 0, 0),
+			MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 0, 0),
+			MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 0, 0),
+			MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 0, 0),
+			MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 0, 0),
 			MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0),
 		]
 
@@ -162,11 +193,45 @@ class ICARM:
 		# 重力补偿初始化
 		self.gc_flag = gc
 		if self.gc_flag:
-			from utils.static_gc import StaticGravityCompensation
-			self.gc = StaticGravityCompensation()
-			# from minimum_gc import MinimumGravityCompensation as GC
+			debug_print(f"初始化重力补偿系统，类型: {gc_type}")
 
-			# self.gc = GC()
+			if gc_type == "mlp":
+				# 使用MLP重力补偿
+				try:
+					from mlp_gravity_integrator import MLPGravityCompensation
+					# 模型路径相对于IC_ARM.py的位置
+					model_path = current_dir / "mlp_compensation" / "mlp_gravity_model_improved.pkl"
+					self.gc = MLPGravityCompensation(
+						model_path=str(model_path),
+						enable_enhanced=True,
+						debug=debug,
+						max_torques=[15.0, 12.0, 12.0, 4.0, 4.0, 3.0]
+					)
+					debug_print("✅ MLP重力补偿初始化成功")
+				except Exception as e:
+					debug_print(f"❌ MLP重力补偿初始化失败: {e}，回退到静态补偿")
+					from utils.static_gc import StaticGravityCompensation
+					self.gc = StaticGravityCompensation()
+					self.gc_type = "static"
+			elif gc_type == "dyn":
+				# 使用动力学重力补偿
+				try:
+					from minimum_gc import MinimumGravityCompensation
+					self.gc = MinimumGravityCompensation()
+					debug_print("✅ 动力学重力补偿初始化成功")
+				except Exception as e:
+					debug_print(f"❌ 动力学重力补偿初始化失败: {e}，回退到静态补偿")
+					from utils.static_gc import StaticGravityCompensation
+					self.gc = StaticGravityCompensation()
+					self.gc_type = "static"
+			else:
+				# 使用原有的静态重力补偿
+				from utils.static_gc import StaticGravityCompensation
+				self.gc = StaticGravityCompensation()
+				debug_print("✅ 静态重力补偿初始化成功")
+		else:
+			self.gc = None
+			debug_print("重力补偿未启用")
 
 		# 初始化异步日志管理器
 		self.logger = AsyncLogManager(
@@ -331,7 +396,7 @@ class ICARM:
 		self.currents = self.tau * 10.0  # 优化: 使用乘法代替除法
 		self.last_update_time = time.time()
 		# 调试输出
-		print(f"[FAST] 跳过日志记录，完成快速状态刷新")
+		# print(f"[FAST] 跳过日志记录，完成快速状态刷新")
 
 	def _refresh_all_states_ultra_fast(self):
 		"""超快速状态刷新 - 使用缓存和跳过所有非必要操作"""
@@ -341,7 +406,7 @@ class ICARM:
 		self._currents_cached = None
 		self.last_update_time = time.time()
 		# 调试输出
-		print(f"[ULTRA] 使用缓存机制，完成超快速状态刷新")
+		# print(f"[ULTRA] 使用缓存机制，完成超快速状态刷新")
 
 	def _refresh_all_states_cached(self):
 		"""缓存状态刷新 - 用于高频控制循环"""
@@ -1147,11 +1212,17 @@ class ICARM:
 
 	def cal_gravity(self):
 		"""计算重力补偿力矩"""
-		if self.gc_flag:
+		if not self.gc_flag:
+			return np.zeros(self.motor_count)
+
+		if self.gc_type == "mlp":
+			return self.cal_gravity_mlp()
+		elif self.gc_type == "dyn":
+			return self.cal_gravity_dyn()
+		else:
+			# 原有的静态重力补偿逻辑
 			self._refresh_all_states_ultra_fast()
 			return self.gc.get_gravity_compensation_torque(self.q)
-		else:
-			return np.zeros(self.motor_count)
 
 	def start_gravity_compensation_mode(self, duration=None, update_rate=100):
 		"""
@@ -1267,6 +1338,141 @@ class ICARM:
 		self.motor_config = motor_config
 		time.sleep(0.1)  # 等待参数生效
 		print("✓ 已恢复正常控制模式")
+
+	def cal_gravity_mlp(self):
+		"""使用MLP计算重力补偿力矩"""
+		if not self.gc_flag or self.gc_type != "mlp":
+			return np.zeros(self.motor_count)
+
+		try:
+			self._refresh_all_states_ultra_fast()
+			# MLP重力补偿只需要位置信息
+			positions = self.q[:6]  # 前6个关节
+			compensation_torque = self.gc.get_gravity_compensation_torque(positions)
+
+			# 扩展到所有电机（保持与原有接口兼容）
+			full_compensation = np.zeros(self.motor_count)
+			full_compensation[:6] = compensation_torque
+
+			return full_compensation
+		except Exception as e:
+			debug_print(f"MLP重力补偿计算失败: {e}", "ERROR")
+			return np.zeros(self.motor_count)
+
+	def cal_gravity_dyn(self):
+		"""使用动力学模型计算重力补偿力矩"""
+		if not self.gc_flag or self.gc_type != "dyn":
+			return np.zeros(self.motor_count)
+
+		try:
+			self._refresh_all_states_ultra_fast()
+			# 动力学重力补偿需要6个关节的位置、速度、加速度信息
+			positions = self.q[:6]  # 前6个关节
+			velocities = self.dq[:6]  # 前6个关节速度
+			accelerations = self.ddq[:6]  # 前6个关节加速度
+
+			# 使用MinimumGravityCompensation计算重力力矩
+			compensation_torque = self.gc.calculate_gravity_torque(positions)
+
+			# 扩展到所有电机（保持与原有接口兼容）
+			full_compensation = np.zeros(self.motor_count)
+			full_compensation[:6] = compensation_torque
+
+			return full_compensation
+		except Exception as e:
+			debug_print(f"动力学重力补偿计算失败: {e}", "ERROR")
+			return np.zeros(self.motor_count)
+
+	def switch_to_mlp_gravity_compensation(self):
+		"""切换到MLP重力补偿模式"""
+		if not self.gc_flag:
+			debug_print("重力补偿未启用", "ERROR")
+			return False
+
+		try:
+			from mlp_gravity_integrator import MLPGravityCompensation
+			model_path = Path(__file__).parent / "mlp_compensation" / "mlp_gravity_model_improved.pkl"
+
+			self.gc = MLPGravityCompensation(
+				model_path=str(model_path),
+				enable_enhanced=True,
+				debug=self.debug,
+				max_torques=[15.0, 12.0, 12.0, 4.0, 4.0, 3.0]
+			)
+			self.gc_type = "mlp"
+			debug_print("✅ 已切换到MLP重力补偿模式")
+			return True
+		except Exception as e:
+			debug_print(f"切换到MLP重力补偿失败: {e}", "ERROR")
+			return False
+
+	def switch_to_dyn_gravity_compensation(self):
+		"""切换到动力学重力补偿模式"""
+		if not self.gc_flag:
+			debug_print("重力补偿未启用", "ERROR")
+			return False
+
+		try:
+			from minimum_gc import MinimumGravityCompensation
+			self.gc = MinimumGravityCompensation()
+			self.gc_type = "dyn"
+			debug_print("✅ 已切换到动力学重力补偿模式")
+			return True
+		except Exception as e:
+			debug_print(f"切换到动力学重力补偿失败: {e}", "ERROR")
+			return False
+
+	def switch_to_static_gravity_compensation(self):
+		"""切换到静态重力补偿模式"""
+		if not self.gc_flag:
+			debug_print("重力补偿未启用", "ERROR")
+			return False
+
+		try:
+			from utils.static_gc import StaticGravityCompensation
+			self.gc = StaticGravityCompensation()
+			self.gc_type = "static"
+			debug_print("✅ 已切换到静态重力补偿模式")
+			return True
+		except Exception as e:
+			debug_print(f"切换到静态重力补偿失败: {e}", "ERROR")
+			return False
+
+	def get_gravity_compensation_performance(self):
+		"""获取重力补偿性能统计"""
+		if not self.gc_flag or self.gc_type != "mlp":
+			return None
+
+		try:
+			return self.gc.get_performance_stats()
+		except Exception as e:
+			debug_print(f"获取性能统计失败: {e}", "ERROR")
+			return None
+
+	def print_gravity_compensation_summary(self):
+		"""打印重力补偿性能摘要"""
+		if not self.gc_flag:
+			print("重力补偿未启用")
+			return
+
+		print(f"=== 重力补偿系统状态 ===")
+		print(f"类型: {self.gc_type}")
+		print(f"状态: {'启用' if self.gc_flag else '禁用'}")
+
+		if self.gc_type == "mlp":
+			try:
+				self.gc.print_performance_summary()
+			except Exception as e:
+				print(f"MLP性能统计获取失败: {e}")
+		elif self.gc_type == "dyn":
+			try:
+				param_info = self.gc.get_parameter_info()
+				print(f"动力学重力补偿信息:")
+				print(f"  基参数数量: {param_info['num_base_params']}")
+				print(f"  参数范围: [{param_info['param_range'][0]:.6f}, {param_info['param_range'][1]:.6f}]")
+				print(f"  参数标准差: {param_info['param_std']:.6f}")
+			except Exception as e:
+				print(f"动力学重力补偿信息获取失败: {e}")
 
 	def pseudo_gravity_compensation(
 		self,
@@ -1957,23 +2163,30 @@ class ICARM:
 # ========== EXAMPLE USAGE ==========
 if __name__ == "__main__":
 	# Example usage
-	arm = ICARM(debug=False)
+	arm = ICARM(debug=False, gc=True, control_freq=300.0)
 	# arm.connect()
 	try:
 		# Test single joint movement
-		print("Testing single joint movement...")
-		arm.enable_all_motors()
-		succes = arm.home_to_zero(speed=0.3, timeout=30.0)
-		# Move joint 0 to 30 degrees
-		# arm.set_joint_positions_degrees([30, 0, 0, 0, 0])
+		# print("Testing single joint movement...")
+		# arm.enable_all_motors()
+		# succes = arm.home_to_zero(speed=0.3, timeout=30.0)
+		# # Move joint 0 to 30 degrees
+		# # arm.set_joint_positions_degrees([30, 0, 0, 0, 0])
+		# # time.sleep(2)
+		arm.switch_to_dyn_gravity_compensation()
+		while True:
+			
+			tau = arm.cal_gravity()
+			arm.set_joint_torque(tau)
+			# print('all info is ', arm._read_all_states(refresh=False))
+			print('predicted tau is ', tau)
+   
+		# # Read state again
+		# arm.print_current_state()
+
+		# # # Return to zero
+		# # arm.set_joint_positions_degrees([0, 0, 0, 0, 0])
 		# time.sleep(2)
-
-		# Read state again
-		arm.print_current_state()
-
-		# # Return to zero
-		# arm.set_joint_positions_degrees([0, 0, 0, 0, 0])
-		time.sleep(2)
 
 	except KeyboardInterrupt:
 		print("Interrupted by user")
