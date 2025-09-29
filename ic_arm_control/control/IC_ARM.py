@@ -127,7 +127,7 @@ class ICARM:
 		# 电机配置数据
 
 		self.motors_data = [
-			MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 200, 4),
+			MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 250, 5),
 			MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x02, 0x12, 120, 2),
 			MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 120, 2),
 			MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 40, 1),
