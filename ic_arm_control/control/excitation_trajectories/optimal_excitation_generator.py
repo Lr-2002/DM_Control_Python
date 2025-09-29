@@ -35,6 +35,9 @@ class OptimalExcitationTrajectoryGenerator:
         self.joint_limits = self._load_joint_limits()
         self.n_joints = len(self.joint_limits)
 
+        # 加载常用角度范围
+        self.common_angles = self._load_common_angles()
+
         # 系统辨识参数
         self.sample_rate = 200  # Hz - 适中的采样率
         self.min_duration = 30.0  # 最小持续时间
@@ -86,6 +89,41 @@ class OptimalExcitationTrajectoryGenerator:
                 {'name': 'joint5', 'lower': -1.770, 'upper': 1.740, 'velocity_limit': 1.57, 'range': 3.510, 'center': -0.015},
                 {'name': 'joint6', 'lower': -2.071, 'upper': 3.859, 'velocity_limit': 1.57, 'range': 5.930, 'center': 0.894}
             ]
+
+    def _load_common_angles(self) -> Dict[int, List[float]]:
+        """加载常用角度范围"""
+        try:
+            common_angles_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm_control/control/common_angles.md"
+            with open(common_angles_path, 'r') as f:
+                lines = f.readlines()
+
+            common_angles = {}
+            for line in lines:
+                line = line.strip()
+                if ':' in line:
+                    joint_id_str, angles_str = line.split(':', 1)
+                    joint_id = int(joint_id_str.strip())
+                    angles = [float(x.strip()) for x in angles_str.strip('[]').split(',')]
+                    # 转换为弧度
+                    angles_rad = [np.deg2rad(angle) for angle in angles]
+                    common_angles[joint_id] = angles_rad
+
+            print(f"已加载常用角度范围:")
+            for joint_id, angles in common_angles.items():
+                print(f"  Joint{joint_id}: [{angles[0]:.3f}, {angles[1]:.3f}] rad = [{np.rad2deg(angles[0]):.0f}°, {np.rad2deg(angles[1]):.0f}°]")
+
+            return common_angles
+        except Exception as e:
+            print(f"加载常用角度失败: {e}")
+            # 返回默认的常用角度范围（转换为弧度）
+            return {
+                1: [np.deg2rad(-50), np.deg2rad(-8)],
+                2: [np.deg2rad(-100), np.deg2rad(15)],
+                3: [np.deg2rad(-20), np.deg2rad(90)],
+                4: [np.deg2rad(-114), np.deg2rad(114)],
+                5: [np.deg2rad(-90), np.deg2rad(90)],
+                6: [np.deg2rad(-120), np.deg2rad(120)]
+            }
 
     def design_optimal_frequencies(self, n_frequencies: int = 8) -> np.ndarray:
         """
@@ -274,9 +312,25 @@ class OptimalExcitationTrajectoryGenerator:
                                    joint_idx: int) -> np.ndarray:
         """生成重力参数辨识激励 - 慢速全工作空间覆盖"""
 
+        # 获取该关节的常用角度范围
+        joint_id = joint_idx + 1  # 转换为1-based
+        if joint_id in self.common_angles:
+            common_min, common_max = self.common_angles[joint_id]
+            common_center = (common_min + common_max) / 2
+            common_range = common_max - common_min
+
+            # 使用常用角度范围而不是整个关节范围
+            effective_amplitude = min(amplitude, common_range * 0.8)  # 限制在常用范围内
+            effective_center = common_center
+        else:
+            # 如果没有常用角度，使用默认范围
+            joint_center = self.joint_limits[joint_idx]['center']
+            effective_amplitude = amplitude
+            effective_center = joint_center
+
         # 非常慢的频率用于重力辨识
         frequencies = np.array([0.1, 0.2, 0.3])  # 超低频
-        amplitudes = amplitude * np.array([0.6, 0.3, 0.1])
+        amplitudes = effective_amplitude * np.array([0.6, 0.3, 0.1])
 
         # 多正弦信号
         trajectory = np.zeros_like(t)
@@ -284,12 +338,11 @@ class OptimalExcitationTrajectoryGenerator:
             trajectory += A * np.sin(2 * np.pi * f * t)
 
         # 添加缓慢的线性漂移
-        drift_component = 0.3 * amplitude * np.sin(2 * np.pi * 0.05 * t)
+        drift_component = 0.3 * effective_amplitude * np.sin(2 * np.pi * 0.05 * t)
         trajectory += drift_component
 
-        # 确保覆盖整个工作空间
-        joint_center = self.joint_limits[joint_idx]['center']
-        trajectory += joint_center
+        # 使用常用角度中心
+        trajectory += effective_center
 
         return trajectory
 
@@ -318,26 +371,41 @@ class OptimalExcitationTrajectoryGenerator:
                                          joint_idx: int) -> np.ndarray:
         """生成综合参数辨识激励 - 所有参数类型"""
 
+        # 获取该关节的常用角度范围
+        joint_id = joint_idx + 1  # 转换为1-based
+        if joint_id in self.common_angles:
+            common_min, common_max = self.common_angles[joint_id]
+            common_center = (common_min + common_max) / 2
+            common_range = common_max - common_min
+
+            # 使用常用角度范围而不是整个关节范围
+            effective_amplitude = min(amplitude, common_range * 0.8)  # 限制在常用范围内
+            effective_center = common_center
+        else:
+            # 如果没有常用角度，使用默认范围
+            joint_center = self.joint_limits[joint_idx]['center']
+            effective_amplitude = amplitude
+            effective_center = joint_center
+
         # 大幅降低频率和幅值
         frequencies = np.array([0.05, 0.15, 0.4, 1.0, 2.5])  # 低中频
-        amplitudes = amplitude * np.array([0.15, 0.12, 0.1, 0.07, 0.04])
+        amplitudes = effective_amplitude * np.array([0.15, 0.12, 0.1, 0.07, 0.04])
 
         # Schroeder多正弦信号
         trajectory = self.schroeder_multisine(t, frequencies, amplitudes)
 
         # 添加特殊激励成分 - 大幅降低
         # 1. 低频大位移（重力）
-        gravity_component = 0.2 * amplitude * np.sin(2 * np.pi * 0.08 * t)
+        gravity_component = 0.2 * effective_amplitude * np.sin(2 * np.pi * 0.08 * t)
         # 2. 中频耦合（科氏力）
-        coriolis_component = 0.1 * amplitude * np.sin(2 * np.pi * 0.8 * t + joint_idx * np.pi/4)
+        coriolis_component = 0.1 * effective_amplitude * np.sin(2 * np.pi * 0.8 * t + joint_idx * np.pi/4)
         # 3. 高频小位移（惯性）
-        inertia_component = 0.05 * amplitude * np.sin(2 * np.pi * 3.0 * t)
+        inertia_component = 0.05 * effective_amplitude * np.sin(2 * np.pi * 3.0 * t)
 
         trajectory += gravity_component + coriolis_component + inertia_component
 
-        # 添加直流偏置
-        joint_center = self.joint_limits[joint_idx]['center']
-        trajectory += joint_center
+        # 使用常用角度中心
+        trajectory += effective_center
 
         return trajectory
 

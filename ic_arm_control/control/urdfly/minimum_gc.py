@@ -171,6 +171,8 @@ class MinimumGravityCompensation:
         if single_point:
             tau = tau.flatten()
         # tau[0] += 10
+        # 限制第一个关节力矩的绝对值不超过15
+        tau[0] = np.clip(tau[0], -15, 15)
         return tau
 
     def _calculate_torque_base_params(self, q, dq, ddq):

@@ -164,6 +164,11 @@ class MultiJointIdentification:
         scaler = RobustScaler()
         X_scaled = scaler.fit_transform(X)
 
+        # 特殊处理Joint1
+        if joint_id == 1:
+            # Joint1使用更温和的正则化和不同的模型
+            return self._identify_joint1_special(X_scaled, y, q_proc, dq_proc, ddq_proc, tau_proc, scaler)
+
         # 模型选择和超参数优化
         models = {
             'Ridge': Ridge(),
@@ -238,6 +243,91 @@ class MultiJointIdentification:
             'position_range': [q_proc.min(), q_proc.max()],
             'velocity_range': [dq_proc.min(), dq_proc.max()],
             'torque_range': [tau_proc.min(), tau_proc.max()]
+        }
+
+        return best_model, scaler, result
+
+    def _identify_joint1_special(self, X_scaled, y, q_proc, dq_proc, ddq_proc, tau_proc, scaler):
+        """
+        专门为Joint1设计的辨识方法
+        """
+        print("  使用Joint1专用辨识方法...")
+
+        # Joint1的专用参数网格（更小的正则化）
+        param_grid = {
+            'Ridge': {'alpha': [0.0001, 0.001, 0.01, 0.1]},
+            'Lasso': {'alpha': [0.0001, 0.001, 0.01]},
+            'ElasticNet': {'alpha': [0.0001, 0.001, 0.01], 'l1_ratio': [0.1, 0.3, 0.5]}
+        }
+
+        models = {
+            'Ridge': Ridge(max_iter=5000),
+            'Lasso': Lasso(max_iter=5000),
+            'ElasticNet': ElasticNet(max_iter=5000)
+        }
+
+        best_model = None
+        best_score = -np.inf
+        best_params = None
+        best_model_name = None
+
+        # 网格搜索
+        for model_name in models:
+            print(f"  测试 {model_name} 模型 (Joint1专用)...")
+            grid_search = GridSearchCV(
+                models[model_name],
+                param_grid[model_name],
+                cv=3,  # 减少交叉验证折数以增加数据量
+                scoring='r2',
+                n_jobs=-1
+            )
+            grid_search.fit(X_scaled, y)
+
+            if grid_search.best_score_ > best_score:
+                best_score = grid_search.best_score_
+                best_model = grid_search.best_estimator_
+                best_params = grid_search.best_params_
+                best_model_name = model_name
+
+        print(f"  最佳模型: {best_model_name}")
+        print(f"  最佳参数: {best_params}")
+        print(f"  交叉验证R²: {best_score:.4f}")
+
+        # 使用最佳模型进行预测
+        tau_pred = best_model.predict(X_scaled)
+
+        # 计算误差
+        mse = mean_squared_error(y, tau_pred)
+        rmse = np.sqrt(mse)
+        r2 = r2_score(y, tau_pred)
+
+        print(f"  RMS误差: {rmse:.6f}")
+        print(f"  R²分数: {r2:.4f}")
+
+        # 输出重要参数
+        print(f"\n  辨识参数 (Joint1):")
+        for i, (name, coef) in enumerate(zip(self.feature_names, best_model.coef_)):
+            if abs(coef) > 1e-6:  # 只显示非零参数
+                print(f"    {name}: {coef:.6f}")
+        print(f"    截距: {best_model.intercept_:.6f}")
+
+        # 保存结果
+        result = {
+            'joint_id': 1,
+            'coefficients': best_model.coef_,
+            'intercept': best_model.intercept_,
+            'feature_names': self.feature_names,
+            'rmse': rmse,
+            'r2': r2,
+            'model_name': best_model_name,
+            'best_params': best_params,
+            'cv_score': best_score,
+            'n_samples': len(q_proc),
+            'n_original_samples': len(q_proc),
+            'position_range': [q_proc.min(), q_proc.max()],
+            'velocity_range': [dq_proc.min(), dq_proc.max()],
+            'torque_range': [tau_proc.min(), tau_proc.max()],
+            'special_treatment': 'Joint1专用方法'
         }
 
         return best_model, scaler, result

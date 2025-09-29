@@ -11,15 +11,36 @@ from excitation_trajectory_generator import ExcitationTrajectoryGenerator
 
 def load_common_angles():
     """加载常用角度设置"""
-    # 从 common_angles.md 读取常用角度范围 (度转弧度)
-    common_angles_deg = {
-        1: [-30, 10],     # Joint1: [-30°, 10°]
-        2: [-100, 10],    # Joint2: [-100°, 10°]
-        3: [-20, 70],     # Joint3: [-20°, 70°]
-        4: [-100, 70],    # Joint4: [-100°, 70°]
-        5: [-90, 90],     # Joint5: [-90°, 90°]
-        6: [-120, 120]    # Joint6: [-120°, 120°]
-    }
+    # 从 common_angles.md 文件读取常用角度范围
+    try:
+        common_angles_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm_control/control/common_angles.md"
+        with open(common_angles_path, 'r') as f:
+            lines = f.readlines()
+
+        common_angles_deg = {}
+        for line in lines:
+            line = line.strip()
+            if ':' in line:
+                joint_id_str, angles_str = line.split(':', 1)
+                joint_id = int(joint_id_str.strip())
+                angles = [float(x.strip()) for x in angles_str.strip('[]').split(',')]
+                common_angles_deg[joint_id] = angles
+
+        print(f"已从文件加载常用角度范围:")
+        for joint_id, angles in common_angles_deg.items():
+            print(f"  Joint{joint_id}: [{angles[0]}°, {angles[1]}°]")
+
+    except Exception as e:
+        print(f"加载常用角度文件失败: {e}")
+        # 使用默认的常用角度范围
+        common_angles_deg = {
+            1: [-15, 25],     # Joint1: [-15°, 25°] - 更新后的默认值
+            2: [-100, 15],   # Joint2: [-100°, 15°]
+            3: [-20, 90],    # Joint3: [-20°, 90°]
+            4: [-114, 114],  # Joint4: [-114°, 114°]
+            5: [-90, 90],    # Joint5: [-90°, 90°]
+            6: [-120, 120]   # Joint6: [-120°, 120°]
+        }
 
     # 转换为弧度
     common_angles_rad = {}

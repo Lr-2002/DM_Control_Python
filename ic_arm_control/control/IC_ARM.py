@@ -109,7 +109,7 @@ def validate_array(array: np.ndarray, expected_shape: Tuple, name: str) -> bool:
 class ICARM:
 	def __init__(
 		self, device_sn="F561E08C892274DB09496BCC1102DBC5", debug=False, gc=False,
-		gc_type="dyn", enable_buffered_control=True, control_freq=300
+		gc_type="dyn", enable_buffered_control=True, control_freq=300, gc_only= False
 	):
 		"""Initialize IC ARM with unified motor control system"""
 		self.debug = debug
@@ -125,7 +125,7 @@ class ICARM:
 		self.motor_manager = MotorManager(usb_hw)
 
 		# 电机配置数据
-
+		
 		self.motors_data = [
 			MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 250, 5),
 			MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x02, 0x12, 120, 2),
@@ -137,17 +137,20 @@ class ICARM:
 			MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 8, 1.2),
 			MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0),
 		]
-		# self.motors_data = [
-		# 	MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 0, 0),
-		# 	MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x02, 0x12, 0, 0),
-		# 	MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 0, 0),
-		# 	MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 0, 0),
-		# 	MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 0, 0),
-		# 	MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 0, 0.2),
-		# 	MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 0, 0),
-		# 	MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 0, 0),
-		# 	MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0),
-		# ]
+
+		self.gc_only = gc_only
+		if self.gc_only:
+			self.motors_data = [
+				MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 0, 0),
+				MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x02, 0x12, 0, 0),
+				MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 0, 0),
+				MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 0, 0),
+				MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 0, 0),
+				MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 0, 0.),
+				MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 0, 0),
+				MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 0, 0),
+				MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0),
+			]
 
 		# 创建协议管理器
 		dm_protocol = DamiaoProtocol(usb_hw, DmMotorManager(usb_hw=usb_hw))
@@ -388,8 +391,8 @@ class ICARM:
 		self.last_update_time = time.time()
 
 		# 添加调试输出 - 显示日志记录
-		if hasattr(self, 'logger') and self.logger.is_running:
-			print(f"[LOG] 电机状态已记录到日志系统")
+		# if hasattr(self, 'logger') and self.logger.is_running:
+		# 	print(f"[LOG] 电机状态已记录到日志系统")
 
 	def _refresh_all_states_fast(self):
 		"""快速状态刷新 - 跳过日志记录"""
@@ -545,9 +548,7 @@ class ICARM:
 	):
 		"""Set positions of all joints - 支持缓冲控制模式"""
 		if self.gc_flag and not torques_nm:
-			tau = self.cal_gravity()
-			# print('calculated tau is ', tau)
-			torques_nm = tau
+			torques_nm = self.cal_gravity()
 		if velocities_rad_s is None:
 			velocities_rad_s = np.zeros(self.motor_count)
 		if torques_nm is None:
@@ -2171,7 +2172,7 @@ class ICARM:
 # ========== EXAMPLE USAGE ==========
 if __name__ == "__main__":
 	# Example usage
-	arm = ICARM(debug=False, gc=True, control_freq=300.0)
+	arm = ICARM(debug=False, gc=True, control_freq=300.0, gc_only=True)
 	# arm.connect()
 	try:
 		# Test single joint movement
@@ -2186,7 +2187,7 @@ if __name__ == "__main__":
 			
 			tau = arm.cal_gravity()
 			pos = arm.get_joint_positions()
-			# arm.set_joint_torque(np.array(tau)*0.8)
+			arm.set_joint_torque(np.array(tau)*0.8)
 			# arm.set_joint_positions(positions_rad=pos, torques_nm=tau)
 			# print('all info is ', arm._read_all_states(refresh=False))
 			print('predicted tau is ', tau)

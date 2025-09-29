@@ -98,12 +98,18 @@ def main():
         # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_170759",
         # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_170840",
         # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_170933",
-        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_210525",
-        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_210408",
-        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_214524",
-        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_214427",
-        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_220012",
-        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_222206"
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_210525",
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_210408",
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_214524",
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_214427",
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_220012",
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_222206"
+        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_213928",
+        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_222653",
+        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_224318",
+        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_224845",
+        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_230035",
+        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_225854"
     ]
 
     output_dir = "/Users/lr-2002/project/instantcreation/IC_arm_control/dyn_ana"
