@@ -318,6 +318,7 @@ class ICARM:
 		# 记录电机状态到日志（仅在启用时）
 		if (enable_logging and hasattr(self, 'logger') and
 			self.logger.is_running):
+			print("记录电机状态到日志")
 			log_success = self.logger.log_motor_states(self.q, self.dq, self.tau)
 			if not log_success:
 				# 静默处理日志失败，避免调试输出影响性能
@@ -340,7 +341,13 @@ class ICARM:
 			self.q[i] = feedback.position
 			self.dq[i] = feedback.velocity
 			self.tau[i] = feedback.torque
-
+		if ( hasattr(self, 'logger') and
+			self.logger.is_running):
+			print("记录电机状态到日志")
+			log_success = self.logger.log_motor_states(self.q, self.dq, self.tau)
+			if not log_success:
+				# 静默处理日志失败，避免调试输出影响性能
+				pass
 		return self.q, self.dq, self.tau
 
 	def _read_all_states_cached(self):
@@ -377,6 +384,13 @@ class ICARM:
 		self._state_cache['valid'] = True
 		self._last_state_refresh = current_time
 
+		if (hasattr(self, 'logger') and
+			self.logger.is_running):
+			# print("记录电机状态到日志")
+			log_success = self.logger.log_motor_states(self.q, self.dq, self.tau)
+			if not log_success:
+				# 静默处理日志失败，避免调试输出影响性能
+				pass
 		return self.q, self.dq, self.tau
 
 	# ========== STATE UPDATE FUNCTIONS ==========
