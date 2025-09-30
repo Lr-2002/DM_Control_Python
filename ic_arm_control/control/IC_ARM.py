@@ -126,7 +126,7 @@ class ICARM:
 
 		# 电机配置数据
 		
-		self.motors_data = [
+		self.control_motors_data = [
 			MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 250, 5),
 			MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x02, 0x12, 120, 2),
 			MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 120, 2),
@@ -138,19 +138,25 @@ class ICARM:
 			MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0),
 		]
 
+		self.gc_motors_data = [
+			MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 0, 0),
+			MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x02, 0x12, 0, 0),
+			MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 0, 0),
+			MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 0, 0.2),
+			MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 0, 0.2),
+			MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 0, 0.2),
+			MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 0, 0),
+			MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 0, 0),
+			MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0),
+		]
+
+
 		self.gc_only = gc_only
 		if self.gc_only:
-			self.motors_data = [
-				MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 0, 0),
-				MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x02, 0x12, 0, 0),
-				MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 0, 0),
-				MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 0, 0.2),
-				MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 0, 0.2),
-				MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 0, 0.2),
-				MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 0, 0),
-				MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 0, 0),
-				MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0),
-			]
+			self.motors_data = self.gc_motors_data
+		else:
+			self.motors_data = self.control_motors_data
+
 
 		# 创建协议管理器
 		dm_protocol = DamiaoProtocol(usb_hw, DmMotorManager(usb_hw=usb_hw))
@@ -246,6 +252,11 @@ class ICARM:
 		self.logger.start()
 		debug_print("✓ 异步日志系统已启动")
 
+		# 静力标定相关变量
+		self.static_calibration_mode = False  # False: 移动模式, True: 静态模式
+		self.static_logger = None  # 静态模式的独立日志记录器
+		self.last_positions = None  # 记录切换到静态模式时的位置
+
 		# 状态缓存机制 - 减少冗余USB通信
 		self._state_cache = {
 			'q': np.zeros(motor_count, dtype=np.float64),
@@ -317,7 +328,7 @@ class ICARM:
 
 		# 记录电机状态到日志（仅在启用时）
 		if (enable_logging and hasattr(self, 'logger') and
-			self.logger.is_running):
+			getattr(self.logger, 'is_running', False)):
 			log_success = self.logger.log_motor_states(self.q, self.dq, self.tau)
 			if not log_success:
 				# 静默处理日志失败，避免调试输出影响性能
@@ -341,7 +352,7 @@ class ICARM:
 			self.dq[i] = feedback.velocity
 			self.tau[i] = feedback.torque
 		if ( hasattr(self, 'logger') and
-			self.logger.is_running):
+			getattr(self.logger, 'is_running', False)):
 			log_success = self.logger.log_motor_states(self.q, self.dq, self.tau)
 			if not log_success:
 				# 静默处理日志失败，避免调试输出影响性能
@@ -383,7 +394,7 @@ class ICARM:
 		self._last_state_refresh = current_time
 
 		if (hasattr(self, 'logger') and
-			self.logger.is_running):
+			getattr(self.logger, 'is_running', False)):
 			log_success = self.logger.log_motor_states(self.q, self.dq, self.tau)
 			if not log_success:
 				# 静默处理日志失败，避免调试输出影响性能
@@ -522,6 +533,7 @@ class ICARM:
 			kp = motor_info.kp
 		if kd is None:
 			kd = motor_info.kd
+		print('the motor info is ', kp, kd , position_rad, velocity_rad_s, torque_nm)
 		return motor.set_command(
 			position_rad, velocity_rad_s, kp, kd, torque_nm
 		)
@@ -550,9 +562,27 @@ class ICARM:
 		if torques_nm is None:
 			torques_nm = np.zeros(self.motor_count)
 
+		# 确保输入是正确的格式
+		torques_nm = np.asarray(torques_nm).flatten()
+
+		# 处理位置和速度参数
+		if positions_rad is None:
+			positions_rad = np.zeros(self.motor_count)
+		else:
+			positions_rad = np.asarray(positions_rad).flatten()
+
+		if velocities_rad_s is None:
+			velocities_rad_s = np.zeros(self.motor_count)
+		else:
+			velocities_rad_s = np.asarray(velocities_rad_s).flatten()
+
 		success = True
 		for i in range(min(self.motor_count, len(torques_nm))):
-			result = self._send_motor_command(i + 1, positions_rad[i], velocities_rad_s[i], torques_nm[i])
+			pos = float(positions_rad[i]) if i < len(positions_rad) else 0.0
+			vel = float(velocities_rad_s[i]) if i < len(velocities_rad_s) else 0.0
+			torque = float(torques_nm[i]) if i < len(torques_nm) else 0.0
+
+			result = self._send_motor_command(i + 1, pos, vel, torque)
 			success = success and result
 
 		return success
@@ -565,16 +595,18 @@ class ICARM:
 		self, positions_rad, velocities_rad_s=None, torques_nm=None, enable_logging=True
 	):
 		"""Set positions of all joints - 支持缓冲控制模式"""
-		if self.gc_flag and not torques_nm:
+		
+		if self.gc_flag and torques_nm is None:
 			torques_nm = self.cal_gravity()
 		if velocities_rad_s is None:
 			velocities_rad_s = np.zeros(self.motor_count)
 		if torques_nm is None:
 			torques_nm = np.zeros(self.motor_count)
 
+		print('now running set joint position control', positions_rad, torques_nm)
 		# 记录关节命令到日志（仅在启用时）
 		if (enable_logging and hasattr(self, 'logger') and
-			self.logger.is_running):
+			getattr(self.logger, 'is_running', False)):
 			self.logger.log_joint_command(
 				np.array(positions_rad),
 				np.array(velocities_rad_s),
@@ -584,7 +616,7 @@ class ICARM:
 		# 检查是否启用缓冲控制
 		if (self.enable_buffered_control and
 			self.buffer_control_thread and
-			self.buffer_control_thread.is_running()):
+			getattr(self.buffer_control_thread, 'is_running', False)):
 			# 缓冲控制模式：通过控制线程发送，立即返回
 			self.buffer_control_thread.set_target_command(
 				positions=np.array(positions_rad),
@@ -599,6 +631,7 @@ class ICARM:
 	def _original_set_joint_positions(self, positions_rad, velocities_rad_s, torques_nm):
 		"""原始的关节位置设置方法 - 直接发送到硬件"""
 		success = True
+		print('the data input to original function is ', positions_rad, torques_nm)
 		for i in range(min(self.motor_count, len(positions_rad))):
 			result = self.set_joint_position(
 				i, positions_rad[i], velocities_rad_s[i], torques_nm[i]
@@ -668,8 +701,8 @@ class ICARM:
 					if not hasattr(self, 'buffer_control_thread') or self.buffer_control_thread is None:
 						self.buffer_control_thread = BufferControlThread(self, control_freq=self.control_freq)
 						debug_print("✓ 缓冲控制线程已创建")
-					
-					if not self.buffer_control_thread.is_running():
+
+					if not getattr(self.buffer_control_thread, 'is_running', False):
 						self.buffer_control_thread.start()
 						debug_print("✓ 缓冲控制线程已启动")
 			else:
@@ -684,9 +717,9 @@ class ICARM:
 		debug_print("Disabling all motors...")
 		
 		# 停止缓冲控制线程（如果运行中）
-		if (hasattr(self, 'buffer_control_thread') and 
-			self.buffer_control_thread and 
-			self.buffer_control_thread.is_running()):
+		if (hasattr(self, 'buffer_control_thread') and
+			self.buffer_control_thread and
+			getattr(self.buffer_control_thread, 'is_running', False)):
 			self.buffer_control_thread.stop()
 			debug_print("✓ 缓冲控制线程已停止")
 		
@@ -722,7 +755,7 @@ class ICARM:
 		if not self.buffer_control_thread:
 			self.buffer_control_thread = BufferControlThread(self, control_freq=self.control_freq)
 			
-		if not self.buffer_control_thread.is_running():
+		if not getattr(self.buffer_control_thread, 'is_running', False):
 			success = self.buffer_control_thread.start()
 			if success:
 				debug_print("✅ 缓冲控制模式已启用")
@@ -733,8 +766,8 @@ class ICARM:
 	
 	def disable_buffered_control_mode(self):
 		"""禁用缓冲控制模式"""
-		if (self.buffer_control_thread and 
-			self.buffer_control_thread.is_running()):
+		if (self.buffer_control_thread and
+			getattr(self.buffer_control_thread, 'is_running', False)):
 			success = self.buffer_control_thread.stop()
 			if success:
 				debug_print("✅ 缓冲控制模式已禁用")
@@ -751,16 +784,275 @@ class ICARM:
 			'statistics': None,
 			'safety_status': None
 		}
-		
+
 		if self.buffer_control_thread:
-			status['running'] = self.buffer_control_thread.is_running()
+			status['running'] = getattr(self.buffer_control_thread, 'is_running', False)
 			if status['running']:
 				status['statistics'] = self.buffer_control_thread.get_statistics()
-		
+
 		if hasattr(self, 'safety_monitor'):
 			status['safety_status'] = self.safety_monitor.get_safety_status()
-			
+
 		return status
+
+	def start_static_calibration(self):
+		"""
+		启动静力标定模式
+
+		功能：
+		1. 按住空格键：切换到只有重力补偿状态（移动模式）
+		2. 松开空格键：切换到以当前位置为目标的正常控制（静态模式）
+		3. 分别记录移动模式和静态模式的数据
+		"""
+		if not self.gc_flag:
+			print("❌ 静力标定需要启用重力补偿，请在初始化时设置gc=True")
+			return False
+
+		print("=== 启动静力标定模式 ===")
+		print("操作说明：")
+		print("  - 按回车键切换：移动模式 <-> 静态模式")
+		print("  - 移动模式：仅重力补偿，可以自由移动机械臂")
+		print("  - 静态模式：保持当前位置，记录静态数据")
+		print("  - 按Ctrl+C退出标定模式")
+		print("==================")
+
+		import threading
+		import time
+		import sys
+		import select
+
+		# 标志位
+		self.calibration_running = True
+		self.static_calibration_mode = False  # 初始为移动模式
+
+		def keyboard_listener():
+			"""键盘监听线程（使用更兼容的方法）"""
+			try:
+				while self.calibration_running:
+					# 检查是否有输入
+					if select.select([sys.stdin], [], [], 0.01)[0]:
+						key = sys.stdin.readline().strip()
+						if key == '':
+							# 空输入（回车键）
+							self.static_calibration_mode = not self.static_calibration_mode
+
+							if self.static_calibration_mode:
+								self._switch_to_static_mode()
+							else:
+								self._switch_to_mobile_mode()
+			except Exception as e:
+				print(f"键盘监听异常: {e}")
+
+		# 设置非阻塞输入
+		import tty
+		import termios
+		old_settings = termios.tcgetattr(sys.stdin)
+		tty.setcbreak(sys.stdin.fileno())
+
+		# 启动键盘监听线程
+		listener_thread = threading.Thread(target=keyboard_listener, daemon=True)
+		listener_thread.start()
+
+		# 初始设置为移动模式
+		self._switch_to_mobile_mode()
+
+		# 主控制循环
+		print("静力标定已启动，按回车键切换模式...")
+		while self.calibration_running:
+			# self._static_mode_control()
+			print('self.static_calibration_mode', self.static_calibration_mode)
+			if self.static_calibration_mode:
+				# 静态模式：保持当前位置
+				self._static_mode_control()
+			else:
+				# 移动模式：仅重力补偿
+				self._mobile_mode_control()
+
+			time.sleep(0.01)  # 100Hz控制频率
+
+		return True
+
+	def _switch_to_mobile_mode(self):
+		"""切换到移动模式（仅重力补偿）"""
+		print("\\n🔄 切换到移动模式（仅重力补偿）")
+		self.static_calibration_mode = False
+
+		# 停止静态模式日志记录器
+		if self.static_logger:
+			self.static_logger.stop()
+			self.static_logger = None
+
+		# 切换到适合移动模式的电机参数（较低的刚度）
+		self._apply_mobile_mode_parameters()
+
+		print("✓ 移动模式已激活，可以自由移动机械臂")
+
+	def _switch_to_static_mode(self):
+		"""切换到静态模式（保持当前位置）"""
+		print("\\n🛑 切换到静态模式（保持位置）")
+		self.static_calibration_mode = True
+
+		# 记录当前位置作为目标位置
+		self.last_positions = self.get_joint_positions().copy()
+		print(f"记录目标位置: {[f'{np.degrees(p):.1f}°' for p in self.last_positions]}")
+
+		# 启动静态模式的独立日志记录器
+		timestamp = time.strftime("%Y%m%d_%H%M%S")
+		self.static_logger = AsyncLogManager(
+			log_dir="/Users/lr-2002/project/instantcreation/IC_arm_control/logs",
+			log_name=f"ic_arm_control_static_{timestamp}",
+			save_csv=True
+		)
+		self.static_logger.start()
+		print("✓ 静态模式日志记录器已启动")
+
+		# 切换到适合静态模式的电机参数（较高的刚度）
+		self._apply_static_mode_parameters()
+
+		print("✓ 静态模式已激活，保持当前位置并记录数据")
+
+	def _apply_mobile_mode_parameters(self):
+		"""应用移动模式参数（仅重力补偿，低刚度）"""
+		# 修改电机配置为移动模式：仅重力补偿，低刚度
+		self.motors_data = self.gc_motors_data
+		self.update_motor_infos()
+
+	def _apply_static_mode_parameters(self):
+		"""应用静态模式参数（保持位置，高刚度）"""
+		# 恢复原始电机配置或设置高刚度参数
+		self.motors_data = self.control_motors_data
+		self.update_motor_infos()
+	
+	def update_motor_infos(self):
+		self.motor_manager.update_motor_infos(self.motors_data)
+
+	def _mobile_mode_control(self):
+		"""移动模式控制：仅重力补偿"""
+		# 计算重力补偿力矩
+		tau_compensation = self.cal_gravity()
+		if tau_compensation.ndim > 1:
+			tau_compensation = tau_compensation.flatten()
+
+		# 应用重力补偿力矩，但不设置位置目标
+		self.set_joint_torque(tau_compensation, self.q, np.zeros(self.motor_count))
+	def _static_mode_control(self):
+		"""静态模式控制：保持位置并记录数据"""
+		if self.last_positions is None:
+			return
+
+		# 计算重力补偿力矩
+		# tau_compensation = np.zeros(self.motor_count)
+		tau_compensation = self.cal_gravity()
+		if tau_compensation.ndim > 1:
+			tau_compensation = tau_compensation.flatten()
+
+		# 发送位置命令（保持目标位置）+ 重力补偿
+		self.set_joint_positions(self.last_positions, torques_nm=tau_compensation)
+
+		# 记录到静态模式日志
+		if self.static_logger and getattr(self.static_logger, 'is_running', False):
+			self.static_logger.log_motor_states(self.q, self.dq, self.tau)
+			self.static_logger.log_joint_command(self.last_positions, np.zeros(self.motor_count), tau_compensation)
+
+	def _cleanup_static_calibration(self):
+		"""清理静力标定资源"""
+		print("清理静力标定资源...")
+
+		# 停止静态日志记录器
+		if self.static_logger:
+			self.static_logger.stop()
+			self.static_logger = None
+			print("✓ 静态日志记录器已停止")
+
+		self.motors_data = self.control_motors_data
+
+		self.static_calibration_mode = False
+		self.last_positions = None
+
+	def toggle_static_calibration_mode(self):
+		"""手动切换静力标定模式"""
+		if not hasattr(self, 'static_calibration_mode'):
+			print("静力标定未启动，先调用 start_static_calibration()")
+			return False
+
+		self.static_calibration_mode = not self.static_calibration_mode
+
+		if self.static_calibration_mode:
+			self._switch_to_static_mode()
+		else:
+			self._switch_to_mobile_mode()
+
+		return True
+
+	def simple_static_calibration_test(self, duration=10.0):
+		"""
+		简单的静力标定测试
+		先运行移动模式duration秒，再运行静态模式duration秒
+		"""
+		if not self.gc_flag:
+			print("❌ 静力标定需要启用重力补偿，请在初始化时设置gc=True")
+			return False
+
+		print("=== 简单静力标定测试 ===")
+		print(f"移动模式: {duration}秒 -> 静态模式: {duration}秒")
+
+		try:
+			import time
+
+			# 标志位
+			self.calibration_running = True
+
+			# 阶段1：移动模式
+			print("\\n🔄 移动模式开始（仅重力补偿）")
+			print("请在此期间手动移动机械臂到标定位置...")
+			self.static_calibration_mode = False
+			self._switch_to_mobile_mode()
+
+			start_time = time.time()
+			while time.time() - start_time < duration:
+				if not self.calibration_running:
+					break
+				self._mobile_mode_control()
+				time.sleep(0.01)
+
+			# 阶段2：静态模式
+			print("\\n🛑 静态模式开始（保持位置并记录）")
+			self.static_calibration_mode = True
+			self._switch_to_static_mode()
+
+			start_time = time.time()
+			while time.time() - start_time < duration:
+				if not self.calibration_running:
+					break
+				self._static_mode_control()
+				time.sleep(0.01)
+
+			print("\\n✓ 静力标定测试完成")
+			return True
+
+		except KeyboardInterrupt:
+			print("\\n用户中断静力标定")
+			return False
+		except Exception as e:
+			print(f"❌ 静力标定失败: {e}")
+			return False
+		finally:
+			# 清理资源
+			if hasattr(self, 'calibration_running'):
+				self.calibration_running = False
+			self._cleanup_static_calibration()
+			print("静力标定已结束")
+
+	def get_static_calibration_status(self) -> dict:
+		"""获取静力标定状态"""
+		return {
+			'active': hasattr(self, 'calibration_running') and self.calibration_running,
+			'mode': 'static' if getattr(self, 'static_calibration_mode', False) else 'mobile',
+			'space_pressed': getattr(self, 'space_pressed', False),
+			'has_static_logger': self.static_logger is not None,
+			'gravity_compensation': self.gc_flag,
+			'last_positions': [float(p) for p in self.last_positions] if self.last_positions is not None else None
+		}
 	
 	def reset_emergency_stop(self):
 		"""重置紧急停止状态"""
@@ -1371,44 +1663,36 @@ class ICARM:
 		if not self.gc_flag or self.gc_type != "mlp":
 			return np.zeros(self.motor_count)
 
-		try:
-			self._refresh_all_states_ultra_fast()
-			# MLP重力补偿只需要位置信息
-			positions = self.q[:6]  # 前6个关节
-			compensation_torque = self.gc.get_gravity_compensation_torque(positions)
+		self._refresh_all_states_ultra_fast()
+		# MLP重力补偿只需要位置信息
+		positions = self.q[:6]  # 前6个关节
+		compensation_torque = self.gc.get_gravity_compensation_torque(positions)
 
-			# 扩展到所有电机（保持与原有接口兼容）
-			full_compensation = np.zeros(self.motor_count)
-			full_compensation[:6] = compensation_torque
+		# 扩展到所有电机（保持与原有接口兼容）
+		full_compensation = np.zeros(self.motor_count)
+		full_compensation[:6] = compensation_torque
 
-			return full_compensation
-		except Exception as e:
-			debug_print(f"MLP重力补偿计算失败: {e}", "ERROR")
-			return np.zeros(self.motor_count)
+		return full_compensation
 
 	def cal_gravity_dyn(self):
 		"""使用动力学模型计算重力补偿力矩"""
 		if not self.gc_flag or self.gc_type != "dyn":
 			return np.zeros(self.motor_count)
 
-		try:
-			self._refresh_all_states_ultra_fast()
-			# 动力学重力补偿需要6个关节的位置、速度、加速度信息
-			positions = self.q[:6]  # 前6个关节
-			velocities = self.dq[:6]  # 前6个关节速度
-			accelerations = self.ddq[:6]  # 前6个关节加速度
+		self._refresh_all_states_ultra_fast()
+		# 动力学重力补偿需要6个关节的位置、速度、加速度信息
+		positions = self.q[:6]  # 前6个关节
+		velocities = self.dq[:6]  # 前6个关节速度
+		accelerations = self.ddq[:6]  # 前6个关节加速度
 
-			# 使用MinimumGravityCompensation计算重力力矩
-			compensation_torque = self.gc.calculate_gravity_torque(positions)
+		# 使用MinimumGravityCompensation计算重力力矩
+		compensation_torque = self.gc.calculate_gravity_torque(positions)
 
-			# 扩展到所有电机（保持与原有接口兼容）
-			full_compensation = np.zeros(self.motor_count)
-			full_compensation[:6] = compensation_torque
+		# 扩展到所有电机（保持与原有接口兼容）
+		full_compensation = np.zeros(self.motor_count)
+		full_compensation[:6] = compensation_torque
 
-			return full_compensation
-		except Exception as e:
-			debug_print(f"动力学重力补偿计算失败: {e}", "ERROR")
-			return np.zeros(self.motor_count)
+		return full_compensation
 
 	def switch_to_mlp_gravity_compensation(self):
 		"""切换到MLP重力补偿模式"""
@@ -1501,188 +1785,7 @@ class ICARM:
 			except Exception as e:
 				print(f"动力学重力补偿信息获取失败: {e}")
 
-	def pseudo_gravity_compensation(
-		self,
-		update_rate=50.0,
-		duration=None,
-		kp_scale=1.0,
-		kd_scale=1.0,
-		enable_logging=True,
-	):
-		"""
-		伪重力补偿：实时读取关节角度并设置为位置目标
 
-		这个方法会持续运行一个控制循环：
-		1. 读取当前关节位置
-		2. 将当前位置设置为新的目标位置
-		3. 通过PD控制器保持当前姿态，抵抗外力（如重力）
-
-		Args:
-			update_rate: 控制循环频率 (Hz)，建议20-100Hz
-			duration: 运行时长 (秒)，None为无限制
-			kp_scale: Kp增益缩放因子，用于调整位置控制强度
-			kd_scale: Kd增益缩放因子，用于调整阻尼
-			enable_logging: 是否启用详细日志
-
-		Returns:
-			bool: 是否正常结束（True）或异常退出（False）
-		"""
-		debug_print("=== 启动伪重力补偿模式 ===")
-		debug_print(f"控制频率: {update_rate:.1f} Hz")
-		debug_print(f"运行时长: {'无限制' if duration is None else f'{duration:.1f}s'}")
-		debug_print(f"Kp缩放: {kp_scale:.2f}, Kd缩放: {kd_scale:.2f}")
-		debug_print("按 Ctrl+C 停止补偿")
-
-		try:
-			# 验证参数
-			validate_type(update_rate, (int, float), "update_rate")
-			validate_type(duration, (int, float, type(None)), "duration")
-			validate_type(kp_scale, (int, float), "kp_scale")
-			validate_type(kd_scale, (int, float), "kd_scale")
-
-			if update_rate <= 0 or update_rate > 200:
-				raise ValueError(f"update_rate应在(0, 200]范围内，当前: {update_rate}")
-			if duration is not None and duration <= 0:
-				raise ValueError(f"duration应为正数或None，当前: {duration}")
-			if kp_scale <= 0 or kd_scale <= 0:
-				raise ValueError(
-					f"kp_scale和kd_scale应为正数，当前: kp={kp_scale}, kd={kd_scale}"
-				)
-
-			# 计算控制周期
-			dt = 1.0 / update_rate
-
-			# 启用所有电机
-			debug_print("启用所有电机...")
-			self.enable_all_motors()
-			time.sleep(0.1)
-
-			# 读取初始位置
-			debug_print("读取初始位置...")
-			self._refresh_all_states()
-			initial_positions = self.q.copy()
-			debug_print(f"初始位置 (度): {np.degrees(initial_positions)}")
-
-			# 初始化统计变量
-			loop_count = 0
-			start_time = time.time()
-			last_log_time = start_time
-			max_position_change = np.zeros(self.motor_count)
-			total_position_change = np.zeros(self.motor_count)
-
-			# 主控制循环
-			debug_print("开始重力补偿控制循环...")
-
-			while True:
-				loop_start_time = time.time()
-
-				# 检查运行时间
-				if duration is not None and (loop_start_time - start_time) >= duration:
-					debug_print(f"达到预设运行时长 {duration:.1f}s，正常结束")
-					break
-
-				try:
-					# 1. 快速读取当前位置（避免过多调试输出）
-					self._refresh_all_states_ultra_fast()
-					current_positions = self.q.copy()
-
-					# 2. 将当前位置设置为目标位置
-					# 使用当前配置的PD参数，但可以通过缩放因子调整
-					for i, motor_name in enumerate(self.motor_names):
-						motor = self.motors[motor_name]
-						config = self.motor_config[motor_name]
-
-						# 应用缩放因子
-						kp = config["kp"] * kp_scale
-						kd = config["kd"] * kd_scale
-						torque_ff = config["torque"]  # 前馈力矩保持不变
-
-						# 发送位置命令（目标位置=当前位置）
-						self.mc.controlMIT(
-							motor, current_positions[i], 0.0, kp, kd, torque_ff
-						)
-
-					# 3. 统计和日志
-					loop_count += 1
-
-					# 计算位置变化
-					if loop_count > 1:
-						position_change = np.abs(current_positions - initial_positions)
-						max_position_change = np.maximum(
-							max_position_change, position_change
-						)
-						total_position_change += position_change
-
-					# 定期日志输出
-					if (
-						enable_logging and (loop_start_time - last_log_time) >= 2.0
-					):  # 每2秒输出一次
-						elapsed = loop_start_time - start_time
-						actual_freq = loop_count / elapsed if elapsed > 0 else 0
-
-						debug_print(
-							f"补偿运行中... 时间: {elapsed:.1f}s, 频率: {actual_freq:.1f}Hz"
-						)
-						debug_print(f"当前位置 (度): {np.degrees(current_positions)}")
-						debug_print(f"最大偏移 (度): {np.degrees(max_position_change)}")
-
-						last_log_time = loop_start_time
-
-					# 4. 控制循环时序
-					loop_duration = time.time() - loop_start_time
-					sleep_time = dt - loop_duration
-
-					if sleep_time > 0:
-						time.sleep(sleep_time)
-					elif enable_logging and loop_count % 100 == 0:  # 偶尔警告时序问题
-						debug_print(
-							f"警告: 控制循环超时 {loop_duration * 1000:.1f}ms > {dt * 1000:.1f}ms",
-							"WARNING",
-						)
-
-				except KeyboardInterrupt:
-					debug_print("用户中断，停止重力补偿")
-					break
-				except Exception as e:
-					debug_print(f"控制循环异常: {e}", "ERROR")
-					if enable_logging:
-						debug_print(f"详细错误: {traceback.format_exc()}", "ERROR")
-					# 继续运行，不因单次异常而退出
-					continue
-
-			# 输出最终统计
-			total_time = time.time() - start_time
-			avg_freq = loop_count / total_time if total_time > 0 else 0
-			avg_position_change = total_position_change / max(loop_count - 1, 1)
-
-			debug_print("=== 重力补偿统计 ===")
-			debug_print(f"运行时长: {total_time:.2f}s")
-			debug_print(f"控制循环次数: {loop_count}")
-			debug_print(f"平均频率: {avg_freq:.1f} Hz")
-			debug_print(f"目标频率: {update_rate:.1f} Hz")
-			debug_print(f"频率达成率: {(avg_freq / update_rate) * 100:.1f}%")
-			debug_print(f"最大位置偏移 (度): {np.degrees(max_position_change)}")
-			debug_print(f"平均位置偏移 (度): {np.degrees(avg_position_change)}")
-			debug_print("===================")
-
-			return True
-
-		except KeyboardInterrupt:
-			debug_print("用户中断重力补偿")
-			return True
-		except Exception as e:
-			debug_print(f"重力补偿失败: {e}", "ERROR")
-			debug_print(f"详细错误: {traceback.format_exc()}", "ERROR")
-			return False
-		finally:
-			# 安全清理
-			try:
-				debug_print("清理资源...")
-				# 可选择是否禁用电机，通常保持启用状态
-				# self.disable_all_motors()
-				debug_print("重力补偿模式结束")
-			except Exception as e:
-				debug_print(f"清理资源时出错: {e}", "ERROR")
 
 	# @pysnooper.snoop()
 	def monitor_positions_continuous(
@@ -1926,7 +2029,7 @@ class ICARM:
 
 		try:
 			# 临时禁用日志记录以提高性能
-			logging_backup = hasattr(self, 'logger') and self.logger.is_running
+			logging_backup = hasattr(self, 'logger') and getattr(self.logger, 'is_running', False)
 			if not enable_logging and logging_backup:
 				if verbose:
 					print("临时禁用日志记录以提高性能...")
@@ -2051,18 +2154,24 @@ class ICARM:
 	def close(self):
 		"""Close the connection and cleanup"""
 		try:
+			# 停止静力标定模式（如果正在运行）
+			if hasattr(self, 'calibration_running') and self.calibration_running:
+				self.calibration_running = False
+				self._cleanup_static_calibration()
+				debug_print("✓ 静力标定模式已关闭")
+
 			# 停止缓冲控制线程
-			if (hasattr(self, 'buffer_control_thread') and 
-				self.buffer_control_thread and 
-				self.buffer_control_thread.is_running()):
+			if (hasattr(self, 'buffer_control_thread') and
+				self.buffer_control_thread and
+				getattr(self.buffer_control_thread, 'is_running', False)):
 				self.buffer_control_thread.stop()
 				debug_print("✓ 缓冲控制线程已关闭")
-			
+
 			# 停止日志系统
-			if hasattr(self, 'logger') and self.logger.is_running:
+			if hasattr(self, 'logger') and getattr(self.logger, 'is_running', False):
 				self.logger.stop()
 				debug_print("✓ 日志系统已关闭")
-				
+
 			# 禁用所有电机
 			self.disable_all_motors()
 
@@ -2190,9 +2299,35 @@ class ICARM:
 # ========== EXAMPLE USAGE ==========
 if __name__ == "__main__":
 	# Example usage
-	arm = ICARM(debug=False, gc=True, control_freq=300.0, gc_only=True)
+	arm = ICARM(debug=False, gc=True, gc_only=True, enable_buffered_control=False)
 	# arm.connect()
 	try:
+		print("=== IC ARM 静力标定示例 ===")
+		print("1. 测试重力补偿模式")
+		print("2. 简单静力标定测试（自动切换）")
+		print("3. 高级静力标定模式（键盘控制）")
+		print("4. 退出")
+
+		choice = input("请选择模式 (1-4): ").strip()
+
+		if choice == "1":
+			print("启动重力补偿模式...")
+			while True:
+				arm.gc_mode()
+		elif choice == "2":
+			print("启动简单静力标定测试...")
+			duration = float(input("请输入每个模式的持续时间（秒，默认10）: ") or "10")
+			arm.simple_static_calibration_test(duration)
+		elif choice == "3":
+			print("启动高级静力标定模式...")
+			arm.start_static_calibration()
+		elif choice == "4":
+			print("退出程序")
+		else:
+			print("启动默认重力补偿模式...")
+			while True:
+				arm.gc_mode()
+
 		# Test single joint movement
 		# print("Testing single joint movement...")
 		# arm.enable_all_motors()
@@ -2201,15 +2336,16 @@ if __name__ == "__main__":
 		# # arm.set_joint_positions_degrees([30, 0, 0, 0, 0])
 		# # time.sleep(2)
 		# arm.switch_to_dyn_gravity_compensation()
-		while True:
-			arm.gc_mode()		
-			# tau = arm.cal_gravity()
-			# pos = arm.get_joint_positions()
-			# arm.set_joint_torque(np.array(tau))
-			# arm.set_joint_positions(positions_rad=pos, torques_nm=tau)
-			# print('all info is ', arm._read_all_states(refresh=False))
-			# print('predicted tau is ', tau)
-   
+		# while True:
+		# 	arm.gc_mode()
+
+		# tau = arm.cal_gravity()
+		# pos = arm.get_joint_positions()
+		# arm.set_joint_torque(np.array(tau))
+		# arm.set_joint_positions(positions_rad=pos, torques_nm=tau)
+		# print('all info is ', arm._read_all_states(refresh=False))
+		# print('predicted tau is ', tau)
+
 		# # Read state again
 		# arm.print_current_state()
 

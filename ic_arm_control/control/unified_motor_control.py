@@ -645,6 +645,23 @@ class MotorManager:
 
     def get_motor_info(self, motor_id):
         return self.motor_infos[motor_id]
+
+    def update_motor_infos(self, motor_infos_list):
+        """更新电机信息
+
+        Args:
+            motor_infos_list: 电机信息列表，每个元素是 MotorInfo 对象
+        """
+        # 将列表转换为字典格式，以 motor_id 为键
+        motor_infos_dict = {motor_info.motor_id: motor_info for motor_info in motor_infos_list}
+
+        for motor_id, motor_info in motor_infos_dict.items():
+            if motor_id in self.motor_infos:
+                self.motor_infos[motor_id] = motor_info
+                # 更新对应的电机实例中的信息
+                if motor_id in self.motors:
+                    self.motors[motor_id].info = motor_info
+                    self.motors[motor_id].motor_info = motor_info
     # 向后兼容的方法
     def add_damiao_protocol(self, motor_control_instance):
         """添加达妙电机协议 - 向后兼容"""
