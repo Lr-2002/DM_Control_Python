@@ -91,10 +91,18 @@ class MinimumGravityCompensation:
                 base_columns = data['base_columns']
                 self.param_format = 'base_params'
             elif 'identified_params' in data:
-                # 新格式 (comprehensive_params_*.npz)
+                # 新格式 (Pinocchio linearization results)
                 base_params = data['identified_params']
-                base_columns = data['base_columns'] if 'base_columns' in data else None
-                self.param_format = 'base_params'
+                base_columns = np.arange(len(base_params))  # Create index array
+                self.param_format = 'pinocchio_linearization'
+                print(f"成功加载Pinocchio线性化参数:")
+                print(f'  参数位置: {param_file}')
+                print(f"  参数数量: {len(base_params)}")
+                identification_info = data['identification_info'].item() if 'identification_info' in data else {}
+                if 'rmse' in identification_info:
+                    print(f"  辨识RMSE: {identification_info['rmse']:.6f}")
+                if 'r2' in identification_info:
+                    print(f"  R²: {identification_info['r2']:.6f}")
             elif 'results' in data:
                 # 最新格式 (multi_joint_params_*.npz) - 独立关节回归
                 results = data['results']
@@ -204,9 +212,10 @@ class MinimumGravityCompensation:
 
                 coeffs = joint_result.get('coefficients', np.zeros(9))
                 intercept = joint_result.get('intercept', 0.0)
+                feature_names = joint_result.get('feature_names', [])
 
                 # 构建特征向量
-                features = self._build_features(q[i, j], dq[i, j], ddq[i, j])
+                features = self._build_features_adaptive(q[i, j], dq[i, j], ddq[i, j], feature_names)
 
                 # 计算力矩: tau = intercept + coeffs @ features
                 tau_i[j] = intercept + np.dot(coeffs, features)
@@ -215,8 +224,22 @@ class MinimumGravityCompensation:
 
         return np.array(tau_list)
 
-    def _build_features(self, pos, vel, acc):
-        """构建特征向量用于独立关节回归"""
+    def _build_features_adaptive(self, pos, vel, acc, feature_names):
+        """根据特征名称构建自适应特征向量"""
+        if not feature_names:
+            # 默认使用动态特征
+            return self._build_features_dynamic(pos, vel, acc)
+
+        # 检查是否为静态数据特征
+        if len(feature_names) == 3 and 'constant' in feature_names and 'sin_pos' in feature_names:
+            return self._build_features_simplified(pos, vel, acc)
+        elif 'sin_2pos' in feature_names or 'sin_3pos' in feature_names:
+            return self._build_features_static(pos, vel, acc)
+        else:
+            return self._build_features_dynamic(pos, vel, acc)
+
+    def _build_features_dynamic(self, pos, vel, acc):
+        """构建动态数据特征向量"""
         return np.array([
             1.0,                    # constant
             vel,                    # velocity
@@ -227,6 +250,30 @@ class MinimumGravityCompensation:
             vel ** 3,               # vel_cubed
             pos * vel,              # pos_vel
             np.cos(pos) * acc       # cos_pos_acc
+        ])
+
+    def _build_features_static(self, pos, vel, acc):
+        """构建静态数据特征向量"""
+        return np.array([
+            1.0,                    # constant
+            np.sin(pos),            # sin_pos
+            np.cos(pos),            # cos_pos
+            np.sin(2*pos),          # sin_2pos
+            np.cos(2*pos),          # cos_2pos
+            np.sin(3*pos),          # sin_3pos
+            np.cos(3*pos),          # cos_3pos
+            np.tanh(vel * 100),     # static_friction_sign
+            np.sign(vel + 1e-10),   # forced_friction_sign
+            pos ** 2,               # pos_squared
+            pos ** 3                # pos_cubed
+        ])
+
+    def _build_features_simplified(self, pos, vel, acc):
+        """构建简化模型特征向量"""
+        return np.array([
+            1.0,                    # constant
+            np.sin(pos),            # sin_pos
+            np.cos(pos)             # cos_pos
         ])
     
     def calculate_gravity_torque(self, q):

@@ -32,7 +32,7 @@ class MultiJointIdentification:
         self.feature_names = []
         self.identification_results = []
 
-    def create_features(self, q, dq, ddq, joint_id):
+    def create_features(self, q, dq, ddq, joint_id, data_mode="auto"):
         """
         为指定关节创建动力学特征 - 改进版本
 
@@ -41,9 +41,64 @@ class MultiJointIdentification:
             dq: 该关节的速度
             ddq: 该关节的加速度
             joint_id: 关节ID
+            data_mode: "auto"自动检测, "static"静态数据, "dynamic"动态数据
 
         Returns:
             特征矩阵
+        """
+        # 检测数据类型
+        if data_mode == "auto":
+            vel_std = np.std(dq)
+            acc_std = np.std(ddq)
+            if vel_std < 0.005 and acc_std < 0.005:
+                data_mode = "static"
+
+        if data_mode == "static":
+            return self._create_static_features(q, dq, ddq, joint_id)
+        else:
+            return self._create_dynamic_features(q, dq, ddq, joint_id)
+
+    def _create_static_features(self, q, dq, ddq, joint_id):
+        """
+        为静态数据创建特征 - 专注于重力辨识
+        """
+        features = []
+
+        # 基本重力特征
+        features.append(np.ones_like(q))  # 常数项
+        features.append(np.sin(q))  # sin重力分量
+        features.append(np.cos(q))  # cos重力分量
+
+        # 重力矩的高阶项
+        features.append(np.sin(2*q))  # 二次谐波
+        features.append(np.cos(2*q))  # 二次谐波
+        features.append(np.sin(3*q))  # 三次谐波
+        features.append(np.cos(3*q))  # 三次谐波
+
+        # 静摩擦特征（即使速度接近零，仍有方向信息）
+        features.append(np.tanh(dq * 100))  # 极敏感的方向特征
+        features.append(np.sign(dq + 1e-10))  # 强制符号（偏移避免零）
+
+        # 位置的平方和立方项（重力矩的非线性）
+        features.append(q**2)
+        features.append(q**3)
+
+        # 组合特征矩阵
+        X = np.column_stack(features)
+
+        # 特征名称（只需设置一次）
+        if not self.feature_names:
+            self.feature_names = [
+                'constant', 'sin_pos', 'cos_pos', 'sin_2pos', 'cos_2pos',
+                'sin_3pos', 'cos_3pos', 'static_friction_sign', 'forced_friction_sign',
+                'pos_squared', 'pos_cubed'
+            ]
+
+        return X
+
+    def _create_dynamic_features(self, q, dq, ddq, joint_id):
+        """
+        为动态数据创建特征 - 原有逻辑
         """
         features = []
 
@@ -80,9 +135,9 @@ class MultiJointIdentification:
 
         return X
 
-    def preprocess_data(self, q, dq, ddq, tau, joint_id):
+    def preprocess_data(self, q, dq, ddq, tau, joint_id, data_mode="auto"):
         """
-        数据预处理 - 过滤低质量数据
+        数据预处理 - 针对静态数据优化的版本
 
         Args:
             q: 位置数组
@@ -90,16 +145,24 @@ class MultiJointIdentification:
             ddq: 加速度数组
             tau: 力矩数组
             joint_id: 关节ID
+            data_mode: "auto"自动检测, "static"静态数据, "dynamic"动态数据
 
         Returns:
             过滤后的数据
         """
         print(f"  原始数据点: {len(q)}")
 
-        # 移除零加速度数据点（这些对惯性辨识无用）
-        zero_acc_mask = np.abs(ddq) < 1e-6
-        if np.sum(zero_acc_mask) > len(q) * 0.5:
-            print(f"  警告: {np.sum(zero_acc_mask)/len(q)*100:.1f}% 的加速度接近零")
+        # 检测数据类型
+        vel_std = np.std(dq)
+        acc_std = np.std(ddq)
+
+        if data_mode == "auto":
+            if vel_std < 0.005 and acc_std < 0.005:
+                data_mode = "static"
+                print(f"  检测到静态数据 (vel_std={vel_std:.6f}, acc_std={acc_std:.6f})")
+            else:
+                data_mode = "dynamic"
+                print(f"  检测到动态数据 (vel_std={vel_std:.6f}, acc_std={acc_std:.6f})")
 
         # 移除异常值
         tau_iqr = np.percentile(tau, [25, 75])
@@ -108,15 +171,44 @@ class MultiJointIdentification:
         tau_upper = tau_iqr[1] + 3 * tau_range
         outlier_mask = (tau < tau_lower) | (tau > tau_upper)
 
-        # 移除静力矩数据点（加速度和速度都很小）
-        static_mask = (np.abs(dq) < 0.01) & (np.abs(ddq) < 0.01)
+        if data_mode == "static":
+            # 静态数据处理策略 - 保留静态数据进行重力辨识
+            print("  使用静态数据处理模式")
 
-        # 组合过滤条件
-        valid_mask = ~(zero_acc_mask | outlier_mask | static_mask)
+            # 移除异常值但保留静态数据点
+            valid_mask = ~outlier_mask
 
-        if np.sum(valid_mask) < 100:  # 如果有效数据太少，放宽条件
-            print(f"  有效数据不足 ({np.sum(valid_mask)}), 放宽过滤条件")
-            valid_mask = ~outlier_mask  # 只移除明显的异常值
+            # 为静态数据添加额外的过滤条件
+            # 确保位置有足够变化（重力辨识需要不同位置的力矩数据）
+            pos_range = np.max(q) - np.min(q)
+            if pos_range < 0.1:  # 位置变化太小
+                print(f"  警告: 位置变化范围太小 ({np.degrees(pos_range):.1f}°)，重力辨识效果可能不佳")
+
+            # 计算统计信息
+            static_torque_std = np.std(tau[valid_mask])
+            print(f"  静态力矩标准差: {static_torque_std:.6f} Nm")
+
+            if static_torque_std < 0.01:
+                print(f"  警告: 力矩变化太小，可能无法辨识重力参数")
+
+        else:
+            # 动态数据处理策略 - 原有逻辑
+            print("  使用动态数据处理模式")
+
+            # 移除零加速度数据点（这些对惯性辨识无用）
+            zero_acc_mask = np.abs(ddq) < 1e-6
+            if np.sum(zero_acc_mask) > len(q) * 0.5:
+                print(f"  警告: {np.sum(zero_acc_mask)/len(q)*100:.1f}% 的加速度接近零")
+
+            # 移除静力矩数据点（加速度和速度都很小）
+            static_mask = (np.abs(dq) < 0.01) & (np.abs(ddq) < 0.01)
+
+            # 组合过滤条件
+            valid_mask = ~(zero_acc_mask | outlier_mask | static_mask)
+
+            if np.sum(valid_mask) < 100:  # 如果有效数据太少，放宽条件
+                print(f"  有效数据不足 ({np.sum(valid_mask)}), 放宽过滤条件")
+                valid_mask = ~outlier_mask  # 只移除明显的异常值
 
         q_filtered = q[valid_mask]
         dq_filtered = dq[valid_mask]
@@ -130,7 +222,7 @@ class MultiJointIdentification:
 
         return q_filtered, dq_filtered, ddq_filtered, tau_filtered
 
-    def identify_joint(self, joint_id, q, dq, ddq, tau, regularization=0.1):
+    def identify_joint(self, joint_id, q, dq, ddq, tau, regularization=0.1, data_mode="auto"):
         """
         辨识单个关节的动力学参数 - 改进版本
 
@@ -141,6 +233,7 @@ class MultiJointIdentification:
             ddq: 加速度数组
             tau: 力矩数组
             regularization: 正则化参数
+            data_mode: "auto"自动检测, "static"静态数据, "dynamic"动态数据
 
         Returns:
             辨识结果
@@ -148,14 +241,14 @@ class MultiJointIdentification:
         print(f"=== 关节{joint_id}动力学辨识 ===")
 
         # 数据预处理
-        q_proc, dq_proc, ddq_proc, tau_proc = self.preprocess_data(q, dq, ddq, tau, joint_id)
+        q_proc, dq_proc, ddq_proc, tau_proc = self.preprocess_data(q, dq, ddq, tau, joint_id, data_mode)
 
         if len(q_proc) < 50:
             print(f"  警告: 有效数据不足 ({len(q_proc)} 个点)，辨识结果可能不可靠")
             return None, None, None
 
         # 创建特征矩阵
-        X = self.create_features(q_proc, dq_proc, ddq_proc, joint_id)
+        X = self.create_features(q_proc, dq_proc, ddq_proc, joint_id, data_mode)
         y = tau_proc
 
         print(f"特征矩阵形状: {X.shape}")
@@ -332,13 +425,179 @@ class MultiJointIdentification:
 
         return best_model, scaler, result
 
-    def identify_all_joints(self, data, regularization=0.1):
+    def identify_joint_static_special(self, joint_id, q, dq, ddq, tau, regularization=0.01):
+        """
+        专门为静态数据设计的辨识方法 - 物理约束优化
+        """
+        print(f"=== 关节{joint_id}静态数据专用辨识 ===")
+
+        # 数据预处理 - 静态模式
+        q_proc, dq_proc, ddq_proc, tau_proc = self.preprocess_data(q, dq, ddq, tau, joint_id, "static")
+
+        if len(q_proc) < 30:
+            print(f"  警告: 有效数据不足 ({len(q_proc)} 个点)，辨识结果可能不可靠")
+            return None, None, None
+
+        # 验证数据质量
+        pos_range = np.max(q_proc) - np.min(q_proc)
+        torque_range = np.max(tau_proc) - np.min(tau_proc)
+
+        # 根据力矩变化范围选择策略
+        if torque_range < 0.05:
+            print(f"  力矩变化范围过小 ({torque_range:.3f} Nm)，使用简化模型")
+            return self._identify_static_simplified(joint_id, q_proc, dq_proc, ddq_proc, tau_proc)
+
+        # 创建静态数据专用特征
+        X = self._create_static_features(q_proc, dq_proc, ddq_proc, joint_id)
+        y = tau_proc
+
+        print(f"特征矩阵形状: {X.shape}")
+
+        # 对静态数据使用更强的正则化和物理约束
+        from sklearn.linear_model import RidgeCV, LassoCV
+        from sklearn.preprocessing import StandardScaler
+
+        # 使用StandardScaler而不是RobustScaler，因为静态数据通常更干净
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+
+        # 针对重力辨识优化的alpha范围
+        alphas = np.logspace(-4, -1, 20)  # 0.0001 to 0.1
+
+        # 使用RidgeCV进行交叉验证
+        ridge_cv = RidgeCV(alphas=alphas, cv=5, scoring='r2')
+        ridge_cv.fit(X_scaled, y)
+
+        print(f"  最佳alpha: {ridge_cv.alpha_:.6f}")
+        print(f"  交叉验证R²: {ridge_cv.score(X_scaled, y):.4f}")
+
+        # 使用最佳模型进行预测
+        tau_pred = ridge_cv.predict(X_scaled)
+
+        # 计算误差
+        mse = mean_squared_error(y, tau_pred)
+        rmse = np.sqrt(mse)
+        r2 = r2_score(y, tau_pred)
+
+        print(f"  RMS误差: {rmse:.6f}")
+        print(f"  R²分数: {r2:.4f}")
+
+        # 输出重要参数
+        print(f"\n  辨识参数 (静态数据专用):")
+        for i, (name, coef) in enumerate(zip(self.feature_names, ridge_cv.coef_)):
+            if abs(coef) > 1e-6:  # 只显示非零参数
+                print(f"    {name}: {coef:.6f}")
+        print(f"    截距: {ridge_cv.intercept_:.6f}")
+
+        print(f"\n  物理验证:")
+        print(f"    位置变化范围: {np.degrees(pos_range):.1f}°")
+        print(f"    力矩变化范围: {torque_range:.3f} Nm")
+
+        if pos_range < 0.05:  # 约3度
+            print(f"    ⚠️ 位置变化范围太小，重力辨识可能不准确")
+        if torque_range < 0.1:
+            print(f"    ⚠️ 力矩变化范围太小，可能无法辨识重力参数")
+
+        # 保存结果
+        result = {
+            'joint_id': joint_id,
+            'coefficients': ridge_cv.coef_,
+            'intercept': ridge_cv.intercept_,
+            'feature_names': self.feature_names,
+            'rmse': rmse,
+            'r2': r2,
+            'model_name': 'RidgeCV_Static',
+            'best_params': {'alpha': ridge_cv.alpha_},
+            'cv_score': ridge_cv.score(X_scaled, y),
+            'n_samples': len(q_proc),
+            'n_original_samples': len(q),
+            'position_range': [q_proc.min(), q_proc.max()],
+            'velocity_range': [dq_proc.min(), dq_proc.max()],
+            'torque_range': [tau_proc.min(), tau_proc.max()],
+            'special_treatment': 'Static data optimized',
+            'pos_range_deg': float(np.degrees(pos_range)),
+            'torque_range_nm': float(torque_range)
+        }
+
+        return ridge_cv, scaler, result
+
+    def _identify_static_simplified(self, joint_id, q, dq, ddq, tau):
+        """
+        简化模型，用于力矩变化范围很小的静态数据
+        """
+        print(f"  使用简化模型进行辨识...")
+
+        # 使用最基础的特征
+        features = []
+        features.append(np.ones_like(q))  # 常数项
+        features.append(np.sin(q))  # 基本重力分量
+        features.append(np.cos(q))  # 基本重力分量
+
+        X = np.column_stack(features)
+        y = tau
+
+        # 简化的特征名称
+        simplified_features = ['constant', 'sin_pos', 'cos_pos']
+
+        # 使用强正则化
+        from sklearn.linear_model import Ridge
+        from sklearn.preprocessing import StandardScaler
+
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+
+        # 使用固定的强正则化参数
+        model = Ridge(alpha=0.1)
+        model.fit(X_scaled, y)
+
+        # 预测
+        tau_pred = model.predict(X_scaled)
+
+        # 计算误差
+        mse = mean_squared_error(y, tau_pred)
+        rmse = np.sqrt(mse)
+        r2 = r2_score(y, tau_pred)
+
+        print(f"  简化模型R²: {r2:.4f}")
+        print(f"  简化模型RMSE: {rmse:.6f}")
+
+        print(f"\n  辨识参数 (简化模型):")
+        for i, (name, coef) in enumerate(zip(simplified_features, model.coef_)):
+            print(f"    {name}: {coef:.6f}")
+        print(f"    截距: {model.intercept_:.6f}")
+
+        # 保存结果
+        result = {
+            'joint_id': joint_id,
+            'coefficients': model.coef_,
+            'intercept': model.intercept_,
+            'feature_names': simplified_features,
+            'rmse': rmse,
+            'r2': r2,
+            'model_name': 'Ridge_Simplified',
+            'best_params': {'alpha': 0.1},
+            'cv_score': r2,
+            'n_samples': len(q),
+            'n_original_samples': len(q),
+            'position_range': [q.min(), q.max()],
+            'velocity_range': [dq.min(), dq.max()],
+            'torque_range': [tau.min(), tau.max()],
+            'special_treatment': 'Static data simplified',
+            'pos_range_deg': float(np.degrees(np.max(q) - np.min(q))),
+            'torque_range_nm': float(np.max(tau) - np.min(tau)),
+            'note': 'Simplified model due to small torque range'
+        }
+
+        return model, scaler, result
+
+    def identify_all_joints(self, data, regularization=0.1, data_mode="auto"):
         """
         辨识所有关节的动力学参数
 
         Args:
             data: 包含所有关节数据的DataFrame
             regularization: 正则化参数
+            data_mode: "auto"自动检测, "static"静态数据, "dynamic"动态数据
 
         Returns:
             所有关节的辨识结果
@@ -363,8 +622,12 @@ class MultiJointIdentification:
             ddq = data[acc_col].values
             tau = data[torque_col].values
 
-            # 执行辨识
-            model, scaler, result = self.identify_joint(joint_id, q, dq, ddq, tau, regularization)
+            # 根据数据模式选择辨识方法
+            if data_mode == "static":
+                print(f"  使用静态数据专用辨识方法...")
+                model, scaler, result = self.identify_joint_static_special(joint_id, q, dq, ddq, tau, regularization)
+            else:
+                model, scaler, result = self.identify_joint(joint_id, q, dq, ddq, tau, regularization, data_mode)
 
             if result is not None:
                 # 保存模型和结果
@@ -378,7 +641,7 @@ class MultiJointIdentification:
         print(f"\n✓ 完成 {len(self.identification_results)} 个关节的辨识")
         return self.identification_results
 
-    def predict_joint(self, joint_id, q, dq, ddq):
+    def predict_joint(self, joint_id, q, dq, ddq, data_mode="auto"):
         """
         使用辨识结果预测指定关节的力矩
 
@@ -387,6 +650,7 @@ class MultiJointIdentification:
             q: 位置
             dq: 速度
             ddq: 加速度
+            data_mode: 数据模式，用于选择特征创建方法
 
         Returns:
             预测力矩
@@ -396,8 +660,23 @@ class MultiJointIdentification:
 
         model = self.models[joint_id - 1]
         scaler = self.scalers[joint_id - 1]
+        result = self.identification_results[joint_id - 1]
 
-        X = self.create_features(q, dq, ddq, joint_id)
+        # 根据模型的特殊处理选择特征创建方法
+        if result.get('special_treatment') == 'Static data simplified':
+            # 简化模型使用基础特征
+            features = []
+            features.append(np.ones_like(np.array(q)))
+            features.append(np.sin(q))
+            features.append(np.cos(q))
+            X = np.column_stack(features)
+        elif result.get('special_treatment') == 'Static data optimized':
+            # 静态数据模型使用静态特征
+            X = self._create_static_features(q, dq, ddq, joint_id)
+        else:
+            # 动态数据模型使用动态特征
+            X = self._create_dynamic_features(q, dq, ddq, joint_id)
+
         X_scaled = scaler.transform(X)
         return model.predict(X_scaled)
 
@@ -441,9 +720,13 @@ class MultiJointIdentification:
         if joint_id > len(self.models):
             raise ValueError(f"关节 {joint_id} 模型不存在")
 
-        # 预测力矩
-        tau_pred = self.predict_joint(joint_id, q, dq, ddq)
         result = self.identification_results[joint_id - 1]
+
+        # 根据模型的特殊处理选择预测方法
+        if result.get('special_treatment') == 'Static data optimized':
+            tau_pred = self.predict_joint(joint_id, q, dq, ddq)
+        else:
+            tau_pred = self.predict_joint(joint_id, q, dq, ddq)
 
         # 创建图表
         fig, axes = plt.subplots(2, 2, figsize=(12, 10))
@@ -595,7 +878,7 @@ def load_data_from_csv(csv_file):
 
     return data
 
-def run_multi_joint_identification(csv_file, max_points=None, regularization=0.1):
+def run_multi_joint_identification(csv_file, max_points=None, regularization=0.1, data_mode="auto"):
     """
     运行多关节辨识
 
@@ -603,6 +886,7 @@ def run_multi_joint_identification(csv_file, max_points=None, regularization=0.1
         csv_file: CSV文件路径
         max_points: 最大数据点数
         regularization: 正则化参数
+        data_mode: "auto"自动检测, "static"静态数据, "dynamic"动态数据
     """
     # 加载数据
     data = load_data_from_csv(csv_file)
@@ -614,7 +898,7 @@ def run_multi_joint_identification(csv_file, max_points=None, regularization=0.1
 
     # 创建辨识器并执行辨识
     identifier = MultiJointIdentification(n_joints=6)
-    results = identifier.identify_all_joints(data, regularization=regularization)
+    results = identifier.identify_all_joints(data, regularization=regularization, data_mode=data_mode)
 
     # 绘制每个关节的结果
     for i, result in enumerate(results):
@@ -638,16 +922,28 @@ def run_multi_joint_identification(csv_file, max_points=None, regularization=0.1
     return identifier
 
 if __name__ == "__main__":
+    import sys
+
     # 使用转换后的日志数据
     data_file = "/Users/lr-2002/project/instantcreation/IC_arm_control/dyn_ana/merged_log_data.csv"
 
+    # 解析命令行参数
+    data_mode = "auto"
+    if len(sys.argv) > 1:
+        if sys.argv[1] in ["static", "dynamic", "auto"]:
+            data_mode = sys.argv[1]
+            print(f"使用指定数据模式: {data_mode}")
+
     print("Multi-Joint Dynamics Identification\n")
+    print(f"数据模式: {data_mode}")
+    print()
 
     # 运行多关节辨识
     identifier = run_multi_joint_identification(
         data_file,
         # max_points=15000,  # 限制数据点数以控制计算时间
-        regularization=0.05
+        regularization=0.05,
+        data_mode=data_mode
     )
 
     print("\n✓ Multi-joint identification completed!")

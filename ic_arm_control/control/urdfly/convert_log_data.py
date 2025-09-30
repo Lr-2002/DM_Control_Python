@@ -8,6 +8,7 @@ import pandas as pd
 import os
 from pathlib import Path
 
+
 def convert_log_dir_to_dynamics(log_dir, output_file):
     """
     Convert a single log directory to dynamics format
@@ -48,34 +49,34 @@ def convert_log_dir_to_dynamics(log_dir, output_file):
         dynamics_data = []
 
         for i in range(len(motor_df)):
-            row_data = {'time': i * dt}
+            row_data = {"time": i * dt}
 
             # Process all 5 joints
             for joint_id in range(1, 7):
-                pos_col = f'position_motor_{joint_id}'
-                vel_col = f'velocity_motor_{joint_id}'
-                torque_col = f'torque_motor_{joint_id}'
+                pos_col = f"position_motor_{joint_id}"
+                vel_col = f"velocity_motor_{joint_id}"
+                torque_col = f"torque_motor_{joint_id}"
 
                 if pos_col in motor_df.columns:
                     position = motor_df[pos_col].iloc[i]
                     velocity = motor_df[vel_col].iloc[i]
                     torque = motor_df[torque_col].iloc[i]
 
-                    row_data[f'm{joint_id}_pos_actual'] = position
-                    row_data[f'm{joint_id}_vel_actual'] = velocity
-                    row_data[f'm{joint_id}_torque'] = torque
+                    row_data[f"m{joint_id}_pos_actual"] = position
+                    row_data[f"m{joint_id}_vel_actual"] = velocity
+                    row_data[f"m{joint_id}_torque"] = torque
 
             dynamics_data.append(row_data)
 
         # Calculate accelerations
         for joint_id in range(1, 7):
-            vel_col = f'm{joint_id}_vel_actual'
+            vel_col = f"m{joint_id}_vel_actual"
             if vel_col in dynamics_data[0]:
                 velocities = [row[vel_col] for row in dynamics_data]
                 accelerations = np.gradient(velocities, dt)
 
                 for j, acc in enumerate(accelerations):
-                    dynamics_data[j][f'm{joint_id}_acc_actual'] = acc
+                    dynamics_data[j][f"m{joint_id}_acc_actual"] = acc
 
         # Create DataFrame and save
         df = pd.DataFrame(dynamics_data)
@@ -91,6 +92,7 @@ def convert_log_dir_to_dynamics(log_dir, output_file):
         print(f"  Error: {e}")
         return None
 
+
 def main():
     """Main conversion function"""
     log_dirs = [
@@ -104,12 +106,16 @@ def main():
         # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_214427",
         # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_220012",
         # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_222206"
-        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_213928",
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_213928",
+        # ---- dynamic data
         "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_222653",
         "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_224318",
         "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_224845",
         "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_230035",
-        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_225854"
+        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_225854",
+        # --- static data
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250930_161953_static",
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250930_162650_static",
     ]
 
     output_dir = "/Users/lr-2002/project/instantcreation/IC_arm_control/dyn_ana"
@@ -119,7 +125,9 @@ def main():
 
     for log_dir in log_dirs:
         if os.path.exists(log_dir):
-            output_file = os.path.join(output_dir, f"dynamics_{os.path.basename(log_dir)}.csv")
+            output_file = os.path.join(
+                output_dir, f"dynamics_{os.path.basename(log_dir)}.csv"
+            )
             result = convert_log_dir_to_dynamics(log_dir, output_file)
             if result:
                 converted_files.append(result)
@@ -132,11 +140,11 @@ def main():
         all_data = []
         for file in converted_files:
             df = pd.read_csv(file)
-            df['source'] = os.path.basename(file)
+            df["source"] = os.path.basename(file)
             all_data.append(df)
 
         merged_df = pd.concat(all_data, ignore_index=True)
-        merged_df = merged_df.sort_values('time').reset_index(drop=True)
+        merged_df = merged_df.sort_values("time").reset_index(drop=True)
 
         merged_file = os.path.join(output_dir, "merged_log_data.csv")
         merged_df.to_csv(merged_file, index=False)
@@ -149,5 +157,7 @@ def main():
         print("No files converted")
         return None
 
+
 if __name__ == "__main__":
     main()
+

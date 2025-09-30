@@ -1,0 +1,141 @@
+=== Multi-Joint Dynamics Identification Report (Improved) ===
+
+Generation Time: 2025-09-30 16:36:58.025194
+Number of Joints: 6
+
+【Joint 1】
+  Model: RidgeCV_Static
+  Best Parameters: {'alpha': 0.0001}
+  Cross-validation R²: 0.0357
+  Samples: 16222 (from 17278)
+  RMS Error: 1.159710
+  R² Score: 0.0357
+  Position Range: [0.1°, 89.5°]
+  Velocity Range: [-0.800, 1.142] rad/s
+  Torque Range: [6.203, 13.626] Nm
+  Significant Parameters:
+    sin_pos: 200.856569
+    cos_pos: -41.095441
+    sin_2pos: -140.511812
+    cos_2pos: 132.176865
+    sin_3pos: 15.124568
+    cos_3pos: -56.832687
+    static_friction_sign: -0.125537
+    forced_friction_sign: 0.073915
+    pos_squared: -18.407341
+    pos_cubed: -48.215357
+    intercept: 9.891016
+
+【Joint 2】
+  Model: RidgeCV_Static
+  Best Parameters: {'alpha': 0.1}
+  Cross-validation R²: 0.0372
+  Samples: 16027 (from 17278)
+  RMS Error: 0.681987
+  R² Score: 0.0372
+  Position Range: [-86.7°, 27.3°]
+  Velocity Range: [-1.665, 1.372] rad/s
+  Torque Range: [-2.374, 2.491] Nm
+  Significant Parameters:
+    sin_pos: 0.612169
+    cos_pos: 0.511733
+    sin_2pos: 0.655187
+    cos_2pos: -2.047688
+    sin_3pos: -0.980425
+    cos_3pos: 0.345387
+    static_friction_sign: 0.048722
+    forced_friction_sign: -0.010241
+    pos_squared: -0.911605
+    pos_cubed: -0.598989
+    intercept: 0.050141
+
+【Joint 3】
+  Model: RidgeCV_Static
+  Best Parameters: {'alpha': 0.0018329807108324356}
+  Cross-validation R²: 0.3374
+  Samples: 16682 (from 17278)
+  RMS Error: 1.451653
+  R² Score: 0.3374
+  Position Range: [-20.4°, 79.7°]
+  Velocity Range: [-2.212, 1.314] rad/s
+  Torque Range: [-4.542, 8.410] Nm
+  Significant Parameters:
+    sin_pos: 123.448962
+    cos_pos: 2.367431
+    sin_2pos: -108.886215
+    cos_2pos: -37.785737
+    sin_3pos: 31.018965
+    cos_3pos: -3.133946
+    static_friction_sign: -0.203426
+    forced_friction_sign: 0.149954
+    pos_squared: -63.228077
+    pos_cubed: -18.896463
+    intercept: 2.084352
+
+【Joint 4】
+  Model: RidgeCV_Static
+  Best Parameters: {'alpha': 0.01623776739188721}
+  Cross-validation R²: 0.3021
+  Samples: 14435 (from 17278)
+  RMS Error: 0.083261
+  R² Score: 0.3021
+  Position Range: [-222.1°, -13.2°]
+  Velocity Range: [-1.668, 1.746] rad/s
+  Torque Range: [-0.636, 0.116] Nm
+  Significant Parameters:
+    sin_pos: -0.984635
+    cos_pos: 1.390045
+    sin_2pos: 0.592775
+    cos_2pos: 0.618030
+    sin_3pos: 0.157304
+    cos_3pos: -0.098890
+    static_friction_sign: -0.018964
+    forced_friction_sign: 0.011651
+    pos_squared: 0.190107
+    pos_cubed: -1.050553
+    intercept: -0.277633
+
+【Joint 5】
+  Model: RidgeCV_Static
+  Best Parameters: {'alpha': 0.1}
+  Cross-validation R²: 0.0643
+  Samples: 16144 (from 17278)
+  RMS Error: 0.424677
+  R² Score: 0.0643
+  Position Range: [-92.9°, 75.7°]
+  Velocity Range: [-2.117, 2.005] rad/s
+  Torque Range: [-2.181, 0.376] Nm
+  Significant Parameters:
+    sin_pos: 3.631636
+    cos_pos: 1.276529
+    sin_2pos: -3.636023
+    cos_2pos: -0.314585
+    sin_3pos: 0.710147
+    cos_3pos: 0.013808
+    static_friction_sign: -0.080697
+    forced_friction_sign: 0.045524
+    pos_squared: 0.969367
+    pos_cubed: -0.871710
+    intercept: -0.876287
+
+【Joint 6】
+  Model: Ridge_Simplified
+  Best Parameters: {'alpha': 0.1}
+  Cross-validation R²: 0.0254
+  Samples: 16365 (from 16365)
+  RMS Error: 0.004667
+  R² Score: 0.0254
+  Position Range: [79.5°, 112.1°]
+  Velocity Range: [-0.095, 0.095] rad/s
+  Torque Range: [-0.051, -0.027] Nm
+  Significant Parameters:
+    sin_pos: 0.002265
+    cos_pos: -0.002573
+    intercept: -0.039969
+
+【Overall Statistics】
+  Average RMS Error: 0.634326
+  Average R² Score: 0.1337
+  Average CV R² Score: 0.1337
+  Successfully Identified Joints: 6/6
+  Model Usage: {'RidgeCV_Static': 5, 'Ridge_Simplified': 1}
