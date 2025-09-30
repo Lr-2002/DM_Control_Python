@@ -1,0 +1,156 @@
+{
+  "param_comparison": {
+    "joint1_mass": {
+      "original": 0.219145592185789,
+      "identified": 7.35404239627865,
+      "difference": 7.134896804092861,
+      "relative_change": 32.55779287948535
+    },
+    "joint1_Ixx": {
+      "original": 0.000182713492165964,
+      "identified": -3.1750215734249263,
+      "difference": -3.1752042869170922,
+      "relative_change": -17378.040950740888
+    },
+    "joint1_Iyy": {
+      "original": 0.00043314253008301,
+      "identified": -1.2916672552710453,
+      "difference": -1.2921003978011283,
+      "relative_change": -2983.0829571162335
+    },
+    "joint1_Izz": {
+      "original": 0.00041883794970521,
+      "identified": -11.777032514621544,
+      "difference": -11.77745135257125,
+      "relative_change": -28119.34436439228
+    },
+    "joint1_Ixy": {
+      "original": -5.78521584164592e-06,
+      "identified": 7.178562422010912,
+      "difference": 7.178568207226753,
+      "relative_change": -1240868.5329254158
+    },
+    "joint1_Ixz": {
+      "original": -1.034158788137e-06,
+      "identified": -5.960282435165101,
+      "difference": -5.960281401006313,
+      "relative_change": 5763967.648052762
+    },
+    "joint1_Iyz": {
+      "original": 4.07586322729252e-10,
+      "identified": 0.09368258356018723,
+      "difference": 0.0936825831526009,
+      "relative_change": 184564829.58184725
+    },
+    "joint1_comx": {
+      "original": 0.0972453617554581,
+      "identified": -1.291668292852797,
+      "difference": -1.388913654608255,
+      "relative_change": -14.282569657899828
+    },
+    "joint1_comy": {
+      "original": 0.00156484878616377,
+      "identified": 6.304959320607851,
+      "difference": 6.3033944718216866,
+      "relative_change": 4028.117045393738
+    },
+    "joint1_comz": {
+      "original": -0.0260493559799699,
+      "identified": 5.100319646810529,
+      "difference": 5.126369002790499,
+      "relative_change": -196.79446303439357
+    },
+    "joint2_mass": {
+      "original": 0.205176736390105,
+      "identified": 3.553698892756412,
+      "difference": 3.348522156366307,
+      "relative_change": 16.320184313526184
+    },
+    "joint2_Ixx": {
+      "original": 0.000187049207626281,
+      "identified": 0.09366069020226687,
+      "difference": 0.09347364099464059,
+      "relative_change": 499.727276090207
+    },
+    "joint2_Iyy": {
+      "original": 0.000376578195515716,
+      "identified": 0.29608486746827056,
+      "difference": 0.29570828927275483,
+      "relative_change": 785.25048520863
+    },
+    "joint2_Izz": {
+      "original": 0.000355597993848653,
+      "identified": -0.15158925976411683,
+      "difference": -0.15194485775796548,
+      "relative_change": -427.2937914640092
+    },
+    "joint2_Ixy": {
+      "original": -6.05350664533282e-06,
+      "identified": -0.011353316516342471,
+      "difference": -0.011347263009697139,
+      "relative_change": 1874.5251516261321
+    },
+    "joint2_Ixz": {
+      "original": 1.64036988137815e-07,
+      "identified": 0.6361037259566007,
+      "difference": 0.6361035619196126,
+      "relative_change": 3875443.123066925
+    },
+    "joint2_Iyz": {
+      "original": 5.8227758603018e-10,
+      "identified": -0.17985056580184056,
+      "difference": -0.17985056638411814,
+      "relative_change": -263603216.73554525
+    },
+    "joint2_comx": {
+      "original": 0.0825080466061855,
+      "identified": -0.9574032074630059,
+      "difference": -1.0399112540691915,
+      "relative_change": -12.603755580014608
+    },
+    "joint2_comy": {
+      "original": 0.00166828045893919,
+      "identified": 5.131171552745414,
+      "difference": 5.129503272286475,
+      "relative_change": 3074.7245988097907
+    },
+    "joint2_comz": {
+      "original": 0.0278934439832595,
+      "identified": -0.42304238507066805,
+      "difference": -0.45093582905392754,
+      "relative_change": -16.16637327781838
+    },
+    "joint3_mass": {
+      "original": 0.11661427548332,
+      "identified": -5.089167930094222,
+      "difference": -5.205782205577542,
+      "relative_change": -44.64103712463618
+    },
+    "joint3_Ixx": {
+      "original": 6.60586267471173e-05,
+      "identified": 0.6566641156400259,
+      "difference": 0.6565980570132788,
+      "relative_change": 9939.611151253863
+    },
+    "joint3_Iyy": {
+      "original": 0.000105696734713402,
+      "identified": -1.650880678093601,
+      "difference": -1.6509863748283145,
+      "relative_change": -15620.017186938287
+    },
+    "joint3_Izz": {
+      "original": 0.00013244668068283,
+      "identified": 5.219828710445396,
+      "difference": 5.219696263764714,
+      "relative_change": 39409.763203413066
+    }
+  },
+  "validation_info": {
+    "original_rmse": 4.26003248818304,
+    "identified_rmse": 1.1931657164124934,
+    "improvement_ratio": 3.570361123844334,
+    "max_error_original": 19.54415955521019,
+    "max_error_identified": 11.492082575393907
+  },
+  "best_method": "least_squares"
+}

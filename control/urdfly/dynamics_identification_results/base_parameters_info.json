@@ -1,0 +1,242 @@
+{
+  "joint1_mass": {
+    "value": 0.219145592185789,
+    "index": 0
+  },
+  "joint1_Ixx": {
+    "value": 0.000182713492165964,
+    "index": 1
+  },
+  "joint1_Iyy": {
+    "value": 0.00043314253008301,
+    "index": 2
+  },
+  "joint1_Izz": {
+    "value": 0.00041883794970521,
+    "index": 3
+  },
+  "joint1_Ixy": {
+    "value": -5.78521584164592e-06,
+    "index": 4
+  },
+  "joint1_Ixz": {
+    "value": -1.034158788137e-06,
+    "index": 5
+  },
+  "joint1_Iyz": {
+    "value": 4.07586322729252e-10,
+    "index": 6
+  },
+  "joint1_comx": {
+    "value": 0.0972453617554581,
+    "index": 7
+  },
+  "joint1_comy": {
+    "value": 0.00156484878616377,
+    "index": 8
+  },
+  "joint1_comz": {
+    "value": -0.0260493559799699,
+    "index": 9
+  },
+  "joint2_mass": {
+    "value": 0.205176736390105,
+    "index": 10
+  },
+  "joint2_Ixx": {
+    "value": 0.000187049207626281,
+    "index": 11
+  },
+  "joint2_Iyy": {
+    "value": 0.000376578195515716,
+    "index": 12
+  },
+  "joint2_Izz": {
+    "value": 0.000355597993848653,
+    "index": 13
+  },
+  "joint2_Ixy": {
+    "value": -6.05350664533282e-06,
+    "index": 14
+  },
+  "joint2_Ixz": {
+    "value": 1.64036988137815e-07,
+    "index": 15
+  },
+  "joint2_Iyz": {
+    "value": 5.8227758603018e-10,
+    "index": 16
+  },
+  "joint2_comx": {
+    "value": 0.0825080466061855,
+    "index": 17
+  },
+  "joint2_comy": {
+    "value": 0.00166828045893919,
+    "index": 18
+  },
+  "joint2_comz": {
+    "value": 0.0278934439832595,
+    "index": 19
+  },
+  "joint3_mass": {
+    "value": 0.11661427548332,
+    "index": 20
+  },
+  "joint3_Ixx": {
+    "value": 6.60586267471173e-05,
+    "index": 21
+  },
+  "joint3_Iyy": {
+    "value": 0.000105696734713402,
+    "index": 22
+  },
+  "joint3_Izz": {
+    "value": 0.00013244668068283,
+    "index": 23
+  },
+  "joint3_Ixy": {
+    "value": 2.39199289252103e-13,
+    "index": 24
+  },
+  "joint3_Ixz": {
+    "value": 1.63832979594642e-07,
+    "index": 25
+  },
+  "joint3_Iyz": {
+    "value": -7.36491488627532e-13,
+    "index": 26
+  },
+  "joint3_comx": {
+    "value": 0.0372116448569682,
+    "index": 27
+  },
+  "joint3_comy": {
+    "value": -3.34861305351097e-10,
+    "index": 28
+  },
+  "joint3_comz": {
+    "value": 0.027774369995377,
+    "index": 29
+  },
+  "joint4_mass": {
+    "value": 0.410704670572243,
+    "index": 30
+  },
+  "joint4_Ixx": {
+    "value": 0.00153160074451751,
+    "index": 31
+  },
+  "joint4_Iyy": {
+    "value": 0.00160265009637375,
+    "index": 32
+  },
+  "joint4_Izz": {
+    "value": 0.000386804834876422,
+    "index": 33
+  },
+  "joint4_Ixy": {
+    "value": -4.606327544183e-05,
+    "index": 34
+  },
+  "joint4_Ixz": {
+    "value": -3.52727030724626e-05,
+    "index": 35
+  },
+  "joint4_Iyz": {
+    "value": -1.59533721181871e-05,
+    "index": 36
+  },
+  "joint4_comx": {
+    "value": 0.0339097352536201,
+    "index": 37
+  },
+  "joint4_comy": {
+    "value": 0.00686739312397486,
+    "index": 38
+  },
+  "joint4_comz": {
+    "value": 0.140966316411207,
+    "index": 39
+  },
+  "joint5_mass": {
+    "value": 0.171986378004719,
+    "index": 40
+  },
+  "joint5_Ixx": {
+    "value": 0.000460307251830134,
+    "index": 41
+  },
+  "joint5_Iyy": {
+    "value": 0.000684902297925858,
+    "index": 42
+  },
+  "joint5_Izz": {
+    "value": 0.000555849026088793,
+    "index": 43
+  },
+  "joint5_Ixy": {
+    "value": -7.59357225870381e-05,
+    "index": 44
+  },
+  "joint5_Ixz": {
+    "value": -0.000171912439320734,
+    "index": 45
+  },
+  "joint5_Iyz": {
+    "value": -6.90613206908106e-05,
+    "index": 46
+  },
+  "joint5_comx": {
+    "value": -0.0313092244531318,
+    "index": 47
+  },
+  "joint5_comy": {
+    "value": -0.0442803547879139,
+    "index": 48
+  },
+  "joint5_comz": {
+    "value": -0.0023506747970426,
+    "index": 49
+  },
+  "joint6_mass": {
+    "value": 0.118358483290454,
+    "index": 50
+  },
+  "joint6_Ixx": {
+    "value": 4.12560270414838e-05,
+    "index": 51
+  },
+  "joint6_Iyy": {
+    "value": 4.12684066162184e-05,
+    "index": 52
+  },
+  "joint6_Izz": {
+    "value": 4.85594060298828e-05,
+    "index": 53
+  },
+  "joint6_Ixy": {
+    "value": 5.60350826459707e-08,
+    "index": 54
+  },
+  "joint6_Ixz": {
+    "value": -4.76729219706054e-09,
+    "index": 55
+  },
+  "joint6_Iyz": {
+    "value": 3.44261726860087e-08,
+    "index": 56
+  },
+  "joint6_comx": {
+    "value": 3.518711500338779e-05,
+    "index": 57
+  },
+  "joint6_comy": {
+    "value": 2.3152202124787595e-05,
+    "index": 58
+  },
+  "joint6_comz": {
+    "value": 0.024950361558461594,
+    "index": 59
+  }
+}
