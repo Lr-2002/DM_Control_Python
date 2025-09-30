@@ -470,7 +470,7 @@ class TrajectoryGenerator:
 		Returns:
 			包含时间、位置、速度、加速度的字典
 		"""
-		dt = 0.001  # 1ms采样间隔
+		dt = 0.002  # 2ms采样间隔 (500Hz)
 		t = np.arange(0, duration, dt)
 		
 		# 处理自定义运动范围
@@ -633,7 +633,7 @@ class TrajectoryGenerator:
 		Returns:
 			完整的序列轨迹
 		"""
-		dt = 0.01
+		dt = 0.002  # 2ms采样间隔 (500Hz)
 		total_duration = len(motor_sequence) * (duration_per_motor + rest_duration)
 		t_total = np.arange(0, total_duration, dt)
 		
@@ -694,7 +694,7 @@ class TrajectoryGenerator:
 				5: {"amplitude": 100.0}
 			}
 		
-		dt = 0.01
+		dt = 0.002  # 2ms采样间隔 (500Hz)
 		t = np.arange(0, duration, dt)
 		
 		all_positions = np.zeros((len(t), self.num_motors))
@@ -783,7 +783,7 @@ class TrajectoryGenerator:
 				5: {"amplitude": 100.0}
 			}
 		
-		dt = 0.01
+		dt = 0.002  # 2ms采样间隔 (500Hz)
 		t = np.arange(0, duration, dt)
 		N = len(t)
 		
@@ -870,7 +870,7 @@ class TrajectoryGenerator:
 				5: {"amplitude": 100.0}
 			}
 		
-		dt = 0.01
+		dt = 0.002  # 2ms采样间隔 (500Hz)
 		t = np.arange(0, duration, dt)
 		
 		all_positions = np.zeros((len(t), self.num_motors))
@@ -947,7 +947,7 @@ class TrajectoryGenerator:
 				5: {"amplitude": 100.0}
 			}
 		
-		dt = 0.01
+		dt = 0.002  # 2ms采样间隔 (500Hz)
 		t = np.arange(0, duration, dt)
 		
 		all_positions = np.zeros((len(t), self.num_motors))
@@ -1053,7 +1053,7 @@ class TrajectoryGenerator:
 				5: {"amplitude": 100.0}
 			}  # 电机1默认范围: -30° 到 0°
 		
-		dt = 0.01
+		dt = 0.002  # 2ms采样间隔 (500Hz)
 		t = np.arange(0, duration, dt)
 		
 		all_positions = np.zeros((len(t), self.num_motors))

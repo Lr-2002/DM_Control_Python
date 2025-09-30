@@ -243,7 +243,7 @@ class TrajectoryExecutor:
 					# 等待到目标时间
 					current_time = time.time() - start_time
 					while current_time < target_time:
-						time.sleep(0.001)
+						time.sleep(0.002)  # 500Hz控制周期
 						current_time = time.time() - start_time
 						if not viewer.is_running():
 							break

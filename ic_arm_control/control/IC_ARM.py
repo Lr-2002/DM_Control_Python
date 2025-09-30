@@ -109,7 +109,7 @@ def validate_array(array: np.ndarray, expected_shape: Tuple, name: str) -> bool:
 class ICARM:
 	def __init__(
 		self, device_sn="F561E08C892274DB09496BCC1102DBC5", debug=False, gc=False,
-		gc_type="dyn", enable_buffered_control=True, control_freq=300, gc_only= False
+		gc_type="dyn", enable_buffered_control=True, control_freq=500, gc_only= False
 	):
 		"""Initialize IC ARM with unified motor control system"""
 		self.debug = debug
@@ -144,9 +144,9 @@ class ICARM:
 				MotorInfo(1, MotorType.DAMIAO, DM_Motor_Type.DM10010L, 0x01, 0x11, 0, 0),
 				MotorInfo(2, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x02, 0x12, 0, 0),
 				MotorInfo(3, MotorType.DAMIAO, DM_Motor_Type.DM6248, 0x03, 0x13, 0, 0),
-				MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 0, 0),
-				MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 0, 0),
-				MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 0, 0.),
+				MotorInfo(4, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x04, 0x14, 0, 0.2),
+				MotorInfo(5, MotorType.DAMIAO, DM_Motor_Type.DM4340, 0x05, 0x15, 0, 0.2),
+				MotorInfo(6, MotorType.DAMIAO, DM_Motor_Type.DM4310, 0x06, 0x16, 0, 0.2),
 				MotorInfo(7, MotorType.HIGH_TORQUE, None, 0x8094, 0x07, 0, 0),
 				MotorInfo(8, MotorType.HIGH_TORQUE, None, 0x8094, 0x08, 0, 0),
 				MotorInfo(9, MotorType.SERVO, None, 0x09, 0x19, 0, 0),
@@ -538,14 +538,21 @@ class ICARM:
 			)
 		return False
 
-	def set_joint_torque(self, torques_nm):
+	def gc_mode(self):
+		tau = self.cal_gravity()
+		pos = self.get_joint_positions()
+		print('predicted tau is ', tau)
+		# pos = np.zeros_like(pos)
+		self.set_joint_torque(np.array(tau), np.array(pos), np.zeros(self.motor_count))
+
+	def set_joint_torque(self, torques_nm, positions_rad = None, velocities_rad_s = None):
 		"""Set torques of all joints using unified interface"""
 		if torques_nm is None:
 			torques_nm = np.zeros(self.motor_count)
 
 		success = True
 		for i in range(min(self.motor_count, len(torques_nm))):
-			result = self._send_motor_command(i + 1, 0, 0, torques_nm[i])
+			result = self._send_motor_command(i + 1, positions_rad[i], velocities_rad_s[i], torques_nm[i])
 			success = success and result
 
 		return success
@@ -2195,13 +2202,13 @@ if __name__ == "__main__":
 		# # time.sleep(2)
 		# arm.switch_to_dyn_gravity_compensation()
 		while True:
-			
-			tau = arm.cal_gravity()
-			pos = arm.get_joint_positions()
-			arm.set_joint_torque(np.array(tau)*0.8)
+			arm.gc_mode()		
+			# tau = arm.cal_gravity()
+			# pos = arm.get_joint_positions()
+			# arm.set_joint_torque(np.array(tau))
 			# arm.set_joint_positions(positions_rad=pos, torques_nm=tau)
 			# print('all info is ', arm._read_all_states(refresh=False))
-			print('predicted tau is ', tau)
+			# print('predicted tau is ', tau)
    
 		# # Read state again
 		# arm.print_current_state()

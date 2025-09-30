@@ -12,7 +12,7 @@ import json
 class CollectionConfig:
     """Dataset collection configuration"""
     # Collection parameters
-    sample_rate: float = 100.0  # Hz
+    sample_rate: float = 500.0  # Hz - 统一500Hz采样率
     max_episodes: Optional[int] = None
     episode_duration: float = 30.0  # seconds
 
@@ -54,7 +54,7 @@ class CollectionConfig:
 class AngleReaderConfig:
     """Angle reader specific configuration"""
     # Sampling parameters
-    sample_rate: float = 1000.0  # Hz
+    sample_rate: float = 500.0  # Hz - 500Hz控制频率
     buffer_size: int = 1000
 
     # Filtering
@@ -92,6 +92,9 @@ class LeRobotIntegrationConfig:
     max_memory_usage_mb: int = 1024
     enable_threading: bool = True
     thread_pool_size: int = 4
+
+    # Control frequency settings
+    control_frequency: float = 500.0  # Hz - 统一控制频率
 
     # Debug settings
     debug_mode: bool = False
@@ -163,7 +166,7 @@ class ConfigManager:
 # Default configurations for different use cases
 DEFAULT_CONFIGS = {
     'basic': CollectionConfig(
-        sample_rate=100.0,
+        sample_rate=500.0,
         episode_duration=30.0,
         save_format="hdf5",
         include_images=False,
@@ -174,7 +177,7 @@ DEFAULT_CONFIGS = {
     ),
 
     'high_frequency': CollectionConfig(
-        sample_rate=1000.0,
+        sample_rate=500.0,
         episode_duration=60.0,
         save_format="hdf5",
         include_images=False,
@@ -183,6 +186,20 @@ DEFAULT_CONFIGS = {
         include_acceleration=True,
         enable_kalman_filter=True,
         smoothing_window=3
+    ),
+
+    'control_500hz': CollectionConfig(
+        sample_rate=500.0,
+        episode_duration=60.0,
+        save_format="hdf5",
+        include_images=False,
+        include_torque=True,
+        include_velocity=True,
+        include_acceleration=True,
+        enable_kalman_filter=True,
+        smoothing_window=2,
+        max_velocity=3.0,  # 提高速度限制以适应高频控制
+        max_acceleration=10.0  # 提高加速度限制
     ),
 
     'full_dataset': CollectionConfig(
@@ -205,23 +222,22 @@ DEFAULT_CONFIGS = {
         include_torque=True,
         include_velocity=True,
         include_acceleration=True,
-        enable_kalman_filter=False,
-        debug_save_raw_data=True
+        enable_kalman_filter=False
     )
 }
 
 DEFAULT_ANGLE_CONFIGS = {
     'basic': AngleReaderConfig(
-        sample_rate=1000.0,
+        sample_rate=500.0,
         buffer_size=500,
         enable_kalman_filter=True,
-        smoothing_window=5,
+        smoothing_window=3,
         enable_acceleration=False
     ),
 
     'high_precision': AngleReaderConfig(
-        sample_rate=2000.0,
-        buffer_size=2000,
+        sample_rate=1000.0,
+        buffer_size=1000,
         enable_kalman_filter=True,
         kalman_process_variance=1e-6,
         kalman_measurement_variance=1e-5,
@@ -236,6 +252,16 @@ DEFAULT_ANGLE_CONFIGS = {
         smoothing_window=1,
         enable_acceleration=False,
         auto_export_on_stop=True
+    ),
+
+    'control_500hz': AngleReaderConfig(
+        sample_rate=500.0,
+        buffer_size=500,
+        enable_kalman_filter=True,
+        smoothing_window=2,
+        enable_acceleration=True,
+        kalman_process_variance=1e-5,
+        kalman_measurement_variance=1e-4
     )
 }
 

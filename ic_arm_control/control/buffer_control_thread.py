@@ -11,9 +11,9 @@ import queue
 
 
 class BufferControlThread:
-    """300Hz缓冲控制线程 - 提供固定频率的实时控制"""
-    
-    def __init__(self, icarm_instance, control_freq: int = 300):
+    """500Hz缓冲控制线程 - 提供固定频率的实时控制"""
+
+    def __init__(self, icarm_instance, control_freq: int = 500):
         """
         初始化缓冲控制线程
         
@@ -92,7 +92,7 @@ class BufferControlThread:
             self.thread = threading.Thread(target=self._control_loop, daemon=True)
             self.thread.start()
             
-            print(f"[BufferControlThread] ✅ 控制线程已启动 (频率: {self.control_freq}Hz)")
+            print(f"[BufferControlThread] ✅ 控制线程已启动 (频率: {self.control_freq}Hz, 周期: {self.dt*1000:.2f}ms)")
             return True
     
     def stop(self, timeout: float = 2.0):
@@ -127,8 +127,8 @@ class BufferControlThread:
             return self.running and self.thread and self.thread.is_alive()
     
     def _control_loop(self):
-        """300Hz控制循环 - 核心控制逻辑"""
-        print(f"[BufferControlThread] 开始300Hz控制循环...")
+        """500Hz控制循环 - 核心控制逻辑"""
+        print(f"[BufferControlThread] 开始500Hz控制循环...")
         
         # 设置线程优先级 (尽力而为)
         try:
@@ -187,7 +187,7 @@ class BufferControlThread:
             else:
                 # 错过了截止时间
                 self.missed_deadlines += 1
-                if self.missed_deadlines % 100 == 0:  # 每100次错过时警告一次
+                if self.missed_deadlines % 50 == 0:  # 每50次错过时警告一次 (500Hz下更频繁)
                     print(f"[BufferControlThread] ⚠️  错过截止时间: {self.missed_deadlines}次, 当前循环时间: {loop_time*1000:.2f}ms")
                 
         

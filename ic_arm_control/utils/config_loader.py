@@ -84,6 +84,12 @@ class ConfigLoader:
                     'm4': 'joint4', 'm5': 'joint5', 'm6': 'joint6'
                 },
                 'joint_names': ['joint1', 'joint2', 'joint3', 'joint4', 'joint5', 'joint6']
+            },
+            'control': {
+                'default_frequency': 500.0,  # Hz - 500Hz控制频率
+                'buffer_size': 500,
+                'max_frequency': 1000.0,
+                'min_frequency': 100.0
             }
         }
     
@@ -145,6 +151,20 @@ class ConfigLoader:
             'm4': 'joint4', 'm5': 'joint5', 'm6': 'joint6'
         })
 
+    def get_control_config(self) -> Dict[str, Any]:
+        """获取控制配置"""
+        return self.config.get('control', {
+            'default_frequency': 500.0,
+            'buffer_size': 500,
+            'max_frequency': 1000.0,
+            'min_frequency': 100.0
+        })
+
+    def get_default_control_frequency(self) -> float:
+        """获取默认控制频率"""
+        control_config = self.get_control_config()
+        return control_config.get('default_frequency', 500.0)
+
 # 全局配置实例
 _global_config = None
 
@@ -166,3 +186,11 @@ def get_joint_names() -> List[str]:
 def get_motor_to_joint_mapping() -> Dict[str, str]:
     """快捷方法：获取电机到关节的映射"""
     return get_config().get_motor_to_joint_mapping()
+
+def get_control_config() -> Dict[str, Any]:
+    """快捷方法：获取控制配置"""
+    return get_config().get_control_config()
+
+def get_default_control_frequency() -> float:
+    """快捷方法：获取默认控制频率"""
+    return get_config().get_default_control_frequency()
