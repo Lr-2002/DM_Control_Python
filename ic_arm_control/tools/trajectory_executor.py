@@ -103,18 +103,63 @@ class TrajectoryExecutor:
 			self.mj_data = None
 	
 	def load_trajectory(self, trajectory_file: str) -> Dict:
-		"""加载轨迹文件"""
+		"""加载轨迹文件，支持JSON和CSV格式"""
 		print(f"加载轨迹文件: {trajectory_file}")
-		
-		with open(trajectory_file, 'r') as f:
-			trajectory = json.load(f)
-		
-		# 转换为numpy数组
-		trajectory['time'] = np.array(trajectory['time'])
-		trajectory['positions'] = np.array(trajectory['positions'])
-		trajectory['velocities'] = np.array(trajectory['velocities'])
-		trajectory['accelerations'] = np.array(trajectory['accelerations'])
-		
+
+		if trajectory_file.endswith('.csv'):
+			# CSV格式处理 (motor_states.csv)
+			import pandas as pd
+
+			# 读取CSV文件
+			df = pd.read_csv(trajectory_file)
+
+			# 解析时间戳
+			timestamps = pd.to_datetime(df['timestamp'])
+			start_time = timestamps.iloc[0]
+			trajectory_time = (timestamps - start_time).dt.total_seconds().values
+
+			# 提取位置数据 (position_motor_1 到 position_motor_9)
+			position_columns = [col for col in df.columns if col.startswith('position_motor_')]
+			positions = df[position_columns].values
+
+			# 提取速度数据 (velocity_motor_1 到 velocity_motor_9)
+			velocity_columns = [col for col in df.columns if col.startswith('velocity_motor_')]
+			velocities = df[velocity_columns].values
+
+			# 计算加速度 (数值微分)
+			accelerations = np.zeros_like(velocities)
+			if len(trajectory_time) > 1:
+				dt = np.diff(trajectory_time)
+				dt[dt == 0] = 1e-6  # 避免除零
+				for i in range(velocities.shape[1]):
+					accelerations[1:, i] = np.diff(velocities[:, i]) / dt
+
+			# 构建轨迹数据结构
+			trajectory = {
+				'time': trajectory_time,
+				'positions': positions,
+				'velocities': velocities,
+				'accelerations': accelerations,
+				'metadata': {
+					'source_file': trajectory_file,
+					'format': 'csv',
+					'num_motors': len(position_columns),
+					'num_points': len(trajectory_time),
+					'duration': float(trajectory_time[-1]) if len(trajectory_time) > 0 else 0.0
+				}
+			}
+
+		else:
+			# JSON格式处理
+			with open(trajectory_file, 'r') as f:
+				trajectory = json.load(f)
+
+			# 转换为numpy数组
+			trajectory['time'] = np.array(trajectory['time'])
+			trajectory['positions'] = np.array(trajectory['positions'])
+			trajectory['velocities'] = np.array(trajectory['velocities'])
+			trajectory['accelerations'] = np.array(trajectory['accelerations'])
+
 		print(f"轨迹加载完成: {len(trajectory['time'])} 个数据点, 持续时间: {trajectory['time'][-1]:.2f}秒")
 		return trajectory
 	
@@ -162,36 +207,9 @@ class TrajectoryExecutor:
 	def _execute_mujoco(self, trajectory: Dict) -> bool:
 		"""MuJoCo仿真执行"""
 		print("MuJoCo仿真执行轨迹...")
-		
-		time_points = trajectory['time']
-		positions = trajectory['positions']
-		
-		# 如果有MuJoCo模型，使用真实仿真
-		if self.mj_model is not None and self.mj_data is not None:
-			return self._execute_mujoco_sim(trajectory)
-		
-		# 否则使用模拟模式
-		print("使用模拟模式执行轨迹...")
-		start_time = time.time()
-		
-		for i, (target_time, target_positions) in enumerate(zip(time_points, positions)):
-			# 等待到目标时间
-			current_time = time.time() - start_time
-			while current_time < target_time:
-				time.sleep(0.001)
-				current_time = time.time() - start_time
-			
-			# 确保位置数组长度匹配关节数量
-			action = target_positions[:self.num_joints] if len(target_positions) >= self.num_joints else target_positions
-			
-			# 进度显示
-			if i % 100 == 0:
-				progress = (i / len(time_points)) * 100
-				print(f"执行进度: {progress:.1f}% - 关节位置: {np.degrees(action)}")
-		
-		print("MuJoCo轨迹执行完成")
-		return True
-	
+
+		return self._execute_mujoco_sim(trajectory)
+
 	def _execute_mujoco_sim(self, trajectory: Dict) -> bool:
 		"""真实MuJoCo仿真执行（需要mjpython运行）"""
 		try:
