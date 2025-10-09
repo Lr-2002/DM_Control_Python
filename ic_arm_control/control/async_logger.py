@@ -36,7 +36,7 @@ class AsyncLogManager:
         
         # 生成时间戳文件夹名
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.session_dir = self.log_dir / self.timestamp
+        self.session_dir = self.log_dir / f"{self.timestamp}_{self.log_name}"
         
         # 创建时间戳文件夹
         self.session_dir.mkdir(parents=True, exist_ok=True)
