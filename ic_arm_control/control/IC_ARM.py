@@ -115,7 +115,7 @@ class ICARM:
         gc=False,
         gc_type="dyn",
         enable_buffered_control=True,
-        control_freq=500,
+        control_freq=250,
         gc_only=False,
     ):
         """Initialize IC ARM with unified motor control system"""
@@ -558,6 +558,7 @@ class ICARM:
         kd=None,
     ):
         """Send command to a single motor using unified interface"""
+        print(' at send motor command ')
         motor = self.motor_manager.get_motor(motor_id)
         motor_info = self.motor_manager.get_motor_info(motor_id)
         if motor is None:
@@ -581,7 +582,7 @@ class ICARM:
             return self._send_motor_command(
                 joint_index + 1, position_rad, velocity_rad_s, torque_nm
             )
-        return False
+        raise RuntimeError('The input data have bad joint_index')
 
     def gc_mode(self):
         tau = self.cal_gravity()
@@ -653,7 +654,7 @@ class ICARM:
         if (
             self.enable_buffered_control
             and self.buffer_control_thread
-            and getattr(self.buffer_control_thread, "is_running", False)
+            and self.buffer_control_thread.is_running()
         ):
             # 缓冲控制模式：通过控制线程发送，立即返回
             self.buffer_control_thread.set_target_command(
@@ -751,7 +752,7 @@ class ICARM:
                         )
                         debug_print("✓ 缓冲控制线程已创建")
 
-                    if not getattr(self.buffer_control_thread, "is_running", False):
+                    if not self.buffer_control_thread.is_running():
                         self.buffer_control_thread.start()
                         debug_print("✓ 缓冲控制线程已启动")
             else:
@@ -769,7 +770,7 @@ class ICARM:
         if (
             hasattr(self, "buffer_control_thread")
             and self.buffer_control_thread
-            and getattr(self.buffer_control_thread, "is_running", False)
+            and self.buffer_control_thread.is_running()
         ):
             self.buffer_control_thread.stop()
             debug_print("✓ 缓冲控制线程已停止")
@@ -808,7 +809,7 @@ class ICARM:
                 self, control_freq=self.control_freq
             )
 
-        if not getattr(self.buffer_control_thread, "is_running", False):
+        if not self.buffer_control_thread.is_running():
             success = self.buffer_control_thread.start()
             if success:
                 debug_print("✅ 缓冲控制模式已启用")
@@ -819,9 +820,7 @@ class ICARM:
 
     def disable_buffered_control_mode(self):
         """禁用缓冲控制模式"""
-        if self.buffer_control_thread and getattr(
-            self.buffer_control_thread, "is_running", False
-        ):
+        if self.buffer_control_thread and self.buffer_control_thread.is_running():
             success = self.buffer_control_thread.stop()
             if success:
                 debug_print("✅ 缓冲控制模式已禁用")
@@ -840,7 +839,7 @@ class ICARM:
         }
 
         if self.buffer_control_thread:
-            status["running"] = getattr(self.buffer_control_thread, "is_running", False)
+            status["running"] = self.buffer_control_thread.is_running()
             if status["running"]:
                 status["statistics"] = self.buffer_control_thread.get_statistics()
 
@@ -1251,10 +1250,10 @@ class ICARM:
             # )
 
             # 询问用户是否继续执行
-            response = input("轨迹预览完成，是否继续执行? (y/n): ").lower().strip()
-            if response != "y":
-                debug_print("用户取消轨迹执行")
-                return False
+            # response = input("轨迹预览完成，是否继续执行? (y/n): ").lower().strip()
+            # if response != "y":
+            #     debug_print("用户取消轨迹执行")
+            #     return False
 
             start_time = time.time()
 
@@ -2319,7 +2318,7 @@ class ICARM:
             if (
                 hasattr(self, "buffer_control_thread")
                 and self.buffer_control_thread
-                and getattr(self.buffer_control_thread, "is_running", False)
+                and self.buffer_control_thread.is_running()
             ):
                 self.buffer_control_thread.stop()
                 debug_print("✓ 缓冲控制线程已关闭")

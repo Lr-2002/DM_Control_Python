@@ -24,7 +24,7 @@ class BufferControlThread:
         self.icarm = icarm_instance
         self.control_freq = control_freq
         self.dt = 1.0 / control_freq
-        
+        print(' buffer control thread dt is ', self.dt)
         # 线程控制
         self.running = False
         self.thread = None
@@ -138,7 +138,6 @@ class BufferControlThread:
             pass
         
         last_time = time.time()
-        
         while self.running:
             loop_start_time = time.time()
             
@@ -180,16 +179,19 @@ class BufferControlThread:
             self.max_loop_time = max(self.max_loop_time, loop_time)
             
             # 计算需要睡眠的时间
-            sleep_time = self.dt - loop_time
+            sleep_time = self.dt - loop_time -0.0007
             
             if sleep_time > 0:
+                print('the sleep time is ', sleep_time)
                 time.sleep(sleep_time)
             else:
                 # 错过了截止时间
                 self.missed_deadlines += 1
                 if self.missed_deadlines % 50 == 0:  # 每50次错过时警告一次 (500Hz下更频繁)
                     print(f"[BufferControlThread] ⚠️  错过截止时间: {self.missed_deadlines}次, 当前循环时间: {loop_time*1000:.2f}ms")
-                
+            if self.loop_count % 10 == 0 :
+                print('the frequency is ', 10/(time.time() - last_time))
+                last_time = time.time()
         
         print("[BufferControlThread] 控制循环已退出")
         print('[BufferControlThread] 总共执行时间为', self.total_time)
