@@ -182,7 +182,18 @@ class DmMotorManager:
         else: 
             self.usb_hw = usb_class(nom_baud, dat_baud,sn)
         time.sleep(0.5)
-        
+                # ERR状态映射
+        self.err_status = {
+            0x0: "失能",
+            0x1: "使能",
+            0x8: "超压",
+            0x9: "欠压",
+            0xA: "过电流",
+            0xB: "MOS过温",
+            0xC: "电机线圈过温",
+            0xD: "通讯丢失",
+            0xE: "过载"
+        }
         # 注意：回调函数将由MotorManager的CANFrameDispatcher统一管理
         # self.usb_hw.setFrameCallback(lambda val: self.canframeCallback(val, None))
         time.sleep(0.2)
@@ -499,7 +510,19 @@ class DmMotorManager:
 
         canID = value.head.id
         # HT电机的帧将由CANFrameDispatcher处理，这里只处理达妙电机的帧
+        
+        # 解析D[0]: ID|ERR<<4
+        # 低4位是ID，高4位是ERR
+        motor_id = value.data[0] & 0x0F  # 低4位
+        err_code = (value.data[0] >> 4) & 0x0F  # 高4位
+        
 
+        
+        if err_code != 0 and err_code != 1:
+            err_msg = self.err_status.get(err_code, f"未知状态(0x{err_code:X})")
+            print(f'[ERROR] canID {canID} (motor_id={motor_id}): ERR={err_code:X} ({err_msg}), D[0]=0x{value.data[0]:02X}')
+            raise RuntimeError(f'CAN [{motor_id}] Error: {err_code:X} ({err_msg})')
+        
         if self.read_write_save.is_set() and canID in self.motors:
             if value.data[2] in (0x33, 0x55, 0xAA):
                 if value.data[2] in (0x33, 0x55):

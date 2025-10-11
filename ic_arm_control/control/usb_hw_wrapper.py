@@ -76,9 +76,10 @@ class USBHardwareWrapper:
         return self.usb_hw.__exit__(exc_type, exc_val, exc_tb)
 
     def fdcanFrameSend(self, data, idx):
-        # print(f"Sending to [{hex(idx)}]: {[hex(i) for i in data]} ")
+        print(f"Sending to [{hex(idx)}]: {[hex(i) for i in data]} ")
         # if idx >= 0xa0:
         #     print(1)
+        # breakpoint()
         xx = self.usb_hw.fdcanFrameSend(data, idx)
         time.sleep(0.00005)
         return xx 

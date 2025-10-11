@@ -1,14 +1,13 @@
 """
-BufferControlThread - 缓冲控制线程
 提供300Hz固定频率的机械臂控制循环
 """
 
 import time
 import threading
 import numpy as np
-from typing import Optional, Tuple, Callable
+from typing import Optional, Callable
 import queue
-
+import pysnooper 
 
 class BufferControlThread:
     """500Hz缓冲控制线程 - 提供固定频率的实时控制"""
@@ -21,7 +20,6 @@ class BufferControlThread:
             icarm_instance: IC_ARM实例
             control_freq: 控制频率 (Hz)
         """
-        self.icarm = icarm_instance
         self.control_freq = control_freq
         self.dt = 1.0 / control_freq
         print(' buffer control thread dt is ', self.dt)
@@ -30,10 +28,11 @@ class BufferControlThread:
         self.thread = None
         self.thread_lock = threading.Lock()
         
-        # 指令缓冲
+        # 命令队列 - 线程安全的命令缓冲（增大队列容量）
+        self.command_queue = queue.Queue(maxsize=100)  # 增大到100个命令缓冲
         self.current_command = {
             'positions': None,
-            'velocities': None, 
+            'velocities': None,
             'torques': None,
             'timestamp': time.time()
         }
@@ -44,7 +43,9 @@ class BufferControlThread:
         self.total_time = 0.0
         self.max_loop_time = 0.0
         self.missed_deadlines = 0
-        
+        self.commands_received = 0  # 接收到的命令总数
+        self.commands_processed = 0  # 处理的命令总数
+        self.icarm =icarm_instance
         # 预计算常用数组，减少运行时分配
         self._zero_velocities = np.zeros(self.icarm.motor_count)
         self._zero_torques = np.zeros(self.icarm.motor_count)
@@ -55,30 +56,59 @@ class BufferControlThread:
                           velocities: Optional[np.ndarray] = None,
                           torques: Optional[np.ndarray] = None):
         """
-        设置目标控制指令 - 立即返回，不阻塞
+        设置目标控制指令 - 通过队列发送，立即返回，不阻塞
         
         Args:
             positions: 目标位置 (rad)
             velocities: 目标速度 (rad/s)
             torques: 目标力矩 (N·m)
         """
-        with self.command_lock:
-            if positions is not None:
-                self.current_command['positions'] = np.array(positions).copy()
-            if velocities is not None:
-                self.current_command['velocities'] = np.array(velocities).copy()
-            if torques is not None:
-                self.current_command['torques'] = np.array(torques).copy()
-            self.current_command['timestamp'] = time.time()
+        command = {
+            'positions': np.array(positions).copy() if positions is not None else None,
+            'velocities': np.array(velocities).copy() if velocities is not None else None,
+            'torques': np.array(torques).copy() if torques is not None else None,
+            'timestamp': time.time()
+        }
+        
+        # 统计接收到的命令
+        self.commands_received += 1
+        
+        try:
+            # 非阻塞放入队列
+            self.command_queue.put_nowait(command)
+        except queue.Full:
+            # 队列满了，使用阻塞方式等待，确保命令不丢失
+            # 设置短暂超时避免死锁
+            try:
+                self.command_queue.put(command, timeout=0.001)  # 1ms超时
+            except queue.Full:
+                # 如果还是满，说明控制线程可能有问题，记录警告但不丢弃命令
+                print(f"[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题")
+                # 强制等待放入，确保命令不丢失
+                self.command_queue.put(command)
     
-    def get_current_command(self) -> dict:
-        """获取当前指令 - 线程安全"""
+    def get_next_command(self) -> dict:
+        """按顺序获取下一个命令（非阻塞）"""
+        try:
+            # 只获取一个命令，按顺序执行
+            command = self.command_queue.get_nowait()
+            self.commands_processed += 1  # 统计处理的命令
+            with self.command_lock:
+                self.current_command.update(command)
+        except queue.Empty:
+            # 没有新命令，继续使用当前命令
+            pass
+        except Exception as e:
+            # 静默处理异常，避免影响控制循环
+            pass
+        
+        # 返回当前命令
         with self.command_lock:
             return {
-                'positions': self.current_command['positions'].copy() if self.current_command['positions'] is not None else None,
-                'velocities': self.current_command['velocities'].copy() if self.current_command['velocities'] is not None else None,
-                'torques': self.current_command['torques'].copy() if self.current_command['torques'] is not None else None,
-                'timestamp': self.current_command['timestamp']
+                'positions': self.current_command.get('positions', None),
+                'velocities': self.current_command.get('velocities', None),
+                'torques': self.current_command.get('torques', None),
+                'timestamp': self.current_command.get('timestamp', None)
             }
     
     def start(self):
@@ -126,6 +156,7 @@ class BufferControlThread:
         with self.thread_lock:
             return self.running and self.thread and self.thread.is_alive()
     
+    # @pysnooper.snoop()
     def _control_loop(self):
         """500Hz控制循环 - 核心控制逻辑"""
         print(f"[BufferControlThread] 开始500Hz控制循环...")
@@ -136,34 +167,33 @@ class BufferControlThread:
             os.nice(-10)  # 提高线程优先级
         except:
             pass
-        
         last_time = time.time()
         while self.running:
             loop_start_time = time.time()
             
             try:
-                # 1. 获取当前指令 (优化版本 - 减少锁竞争)
-                command = self.get_current_command()
+                # 1. 从队列按顺序获取下一个指令（非阻塞）
+                command = self.get_next_command()
                 
                 # 2. 检查是否有有效指令
-                if (command['positions'] is not None or 
-                    command['velocities'] is not None or 
-                    command['torques'] is not None):
+                # if (command['positions'] is not None or 
+                #     command['velocities'] is not None or 
+                #     command['torques'] is not None):
                     
-                    # 3. 安全检查优化 - 每20个周期检查一次，减少计算负担
-                    if hasattr(self.icarm, 'safety_monitor') and self.loop_count % 20 == 0:
-                        is_safe, safe_command = self.icarm.safety_monitor.check_command_safety(
-                            command['positions'],
-                            command['velocities'], 
-                            command['torques']
-                        )
+                #     # 3. 安全检查优化 - 每20个周期检查一次，减少计算负担
+                #     if hasattr(self.icarm, 'safety_monitor') and self.loop_count % 20 == 0:
+                #         is_safe, safe_command = self.icarm.safety_monitor.check_command_safety(
+                #             command['positions'],
+                #             command['velocities'], 
+                #             command['torques']
+                #         )
                         
-                        if not is_safe:
-                            # 使用安全的指令
-                            command = safe_command
+                #         if not is_safe:
+                #             # 使用安全的指令
+                #             command = safe_command
                     
-                    # 4. 发送到硬件层
-                    self._send_to_hardware(command)
+                # 3. 发送到硬件层
+                self._send_to_hardware(command)
                 
                 # 5. 更新统计信息
                 self.loop_count += 1
@@ -182,17 +212,20 @@ class BufferControlThread:
             sleep_time = self.dt - loop_time -0.0007
             
             if sleep_time > 0:
-                print('the sleep time is ', sleep_time)
+                # print('the sleep time is ', sleep_time)
                 time.sleep(sleep_time)
-            else:
-                # 错过了截止时间
-                self.missed_deadlines += 1
-                if self.missed_deadlines % 50 == 0:  # 每50次错过时警告一次 (500Hz下更频繁)
-                    print(f"[BufferControlThread] ⚠️  错过截止时间: {self.missed_deadlines}次, 当前循环时间: {loop_time*1000:.2f}ms")
-            if self.loop_count % 10 == 0 :
-                print('the frequency is ', 10/(time.time() - last_time))
+            # else:
+            #     # 错过了截止时间
+                
+            #         print(f"[BufferControlThread] ⚠️  错过截止时间: {self.missed_deadlines}次, 当前循环时间: {loop_time*1000:.2f}ms")
+            # if self.loop_count % 10 == 0 :
+            #     print('the frequency is ', 10/(time.time() - last_time))
+            #     last_time = time.time()
+            if self.loop_count % 500 == 0 :
+                queue_size = self.command_queue.qsize()
+                print(time.strftime("%H:%M:%S"), 'BufferControlThread', 'freq:', f'{500/(time.time() - last_time):.1f}Hz', 
+                      f'queue:{queue_size}', f'recv:{self.commands_received}', f'proc:{self.commands_processed}')
                 last_time = time.time()
-        
         print("[BufferControlThread] 控制循环已退出")
         print('[BufferControlThread] 总共执行时间为', self.total_time)
         print('[BufferControlThread] 总共步长为', self.loop_count)

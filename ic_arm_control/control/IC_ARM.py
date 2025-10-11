@@ -125,7 +125,7 @@ class ICARM:
         self.control_freq = control_freq
         self.gc_type = gc_type  # 存储重力补偿类型
         debug_print("=== 初始化IC_ARM_Unified ===")
-
+        self.target_dt = 1/ control_freq
         # 初始化统一电机控制系统
         usb_hw = usb_class(1000000, 5000000, device_sn)
         usb_hw = USBHardwareWrapper(usb_hw)
@@ -297,13 +297,14 @@ class ICARM:
 
         # 初始化缓冲控制组件
         self.safety_monitor = SafetyMonitor(motor_count=self.motor_count)
+        # 缓冲控制线程 - 如果启用则立即创建并启动
         self.buffer_control_thread = None
-
+        
         if self.enable_buffered_control:
             self.buffer_control_thread = BufferControlThread(
                 self, control_freq=self.control_freq
             )
-            debug_print(f"✓ 缓冲控制组件已初始化 (频率: {self.control_freq}Hz)")
+            debug_print(f"✓ 缓冲控制线程已创建 (频率: {self.control_freq}Hz)")
         else:
             debug_print("缓冲控制未启用，使用传统控制模式")
 
@@ -336,6 +337,28 @@ class ICARM:
 
     # ========== BATCH READ FUNCTIONS ==========
     # @pysnooper.snoop()
+
+    def _read_all_states_from_feedback(self, enable_logging=True):
+
+        motors = self.motor_manager.motors
+        for i in range(self.motor_count):
+            motor_id = i + 1
+            motor = motors[motor_id]
+            feedback = motor.get_feedback_only()
+            self.q[i] = feedback.position
+            self.dq[i] = feedback.velocity
+            self.tau[i] = feedback.torque
+        # 记录电机状态到日志（仅在启用时）
+        if (
+            enable_logging
+            and hasattr(self, "logger")
+            and getattr(self.logger, "is_running", False)
+        ):
+            log_success = self.logger.log_motor_states(self.q, self.dq, self.tau)
+            if not log_success:
+                # 静默处理日志失败，避免调试输出影响性能
+                pass
+
     def _read_all_states(self, refresh=True, enable_logging=True):
         """Read all motor states using unified interface - optimized version"""
         # 方案1: 使用批量更新状态
@@ -558,7 +581,7 @@ class ICARM:
         kd=None,
     ):
         """Send command to a single motor using unified interface"""
-        print(' at send motor command ')
+        # print(" at send motor command ")
         motor = self.motor_manager.get_motor(motor_id)
         motor_info = self.motor_manager.get_motor_info(motor_id)
         if motor is None:
@@ -569,7 +592,7 @@ class ICARM:
             kp = motor_info.kp
         if kd is None:
             kd = motor_info.kd
-        print("the motor info is ", kp, kd, position_rad, velocity_rad_s, torque_nm)
+        # print("the motor info is ", kp, kd, position_rad, velocity_rad_s, torque_nm)
         return motor.set_command(position_rad, velocity_rad_s, kp, kd, torque_nm)
 
     # ========== PUBLIC WRITE INTERFACES ==========
@@ -582,7 +605,7 @@ class ICARM:
             return self._send_motor_command(
                 joint_index + 1, position_rad, velocity_rad_s, torque_nm
             )
-        raise RuntimeError('The input data have bad joint_index')
+        raise RuntimeError("The input data have bad joint_index")
 
     def gc_mode(self):
         tau = self.cal_gravity()
@@ -637,7 +660,7 @@ class ICARM:
         if torques_nm is None:
             torques_nm = np.zeros(self.motor_count)
 
-        print("now running set joint position control", positions_rad, torques_nm)
+        # print("now running set joint position control", positions_rad, torques_nm)
         # 记录关节命令到日志（仅在启用时）
         if (
             enable_logging
@@ -674,7 +697,7 @@ class ICARM:
     ):
         """原始的关节位置设置方法 - 直接发送到硬件"""
         success = True
-        print("the data input to original function is ", positions_rad, torques_nm)
+        # print("the data input to original function is ", positions_rad, torques_nm)
         for i in range(min(self.motor_count, len(positions_rad))):
             result = self.set_joint_position(
                 i, positions_rad[i], velocities_rad_s[i], torques_nm[i]
@@ -741,20 +764,19 @@ class ICARM:
                 debug_print("Waiting for motors to stabilize...")
                 time.sleep(2)
 
-                # 启动缓冲控制线程（如果启用）
+                # 启动缓冲控制线程（如果启用且未运行）
                 if self.enable_buffered_control:
-                    if (
-                        not hasattr(self, "buffer_control_thread")
-                        or self.buffer_control_thread is None
-                    ):
-                        self.buffer_control_thread = BufferControlThread(
-                            self, control_freq=self.control_freq
-                        )
-                        debug_print("✓ 缓冲控制线程已创建")
-
-                    if not self.buffer_control_thread.is_running():
-                        self.buffer_control_thread.start()
-                        debug_print("✓ 缓冲控制线程已启动")
+                    if hasattr(self, 'buffer_control_thread') and self.buffer_control_thread:
+                        if not self.buffer_control_thread.is_running():
+                            success = self.buffer_control_thread.start()
+                            if success:
+                                debug_print("✓ 缓冲控制线程已启动")
+                            else:
+                                debug_print("❌ 缓冲控制线程启动失败")
+                        else:
+                            debug_print("✓ 缓冲控制线程已在运行")
+                    else:
+                        debug_print("⚠️  缓冲控制线程未创建")
             else:
                 debug_print("Failed to enable all motors", "ERROR")
             return success
@@ -797,26 +819,26 @@ class ICARM:
         return self.disable_all_motors()
 
     # ========== 缓冲控制管理方法 ==========
+    
 
     def enable_buffered_control_mode(self):
         """启用缓冲控制模式"""
         if not self.enable_buffered_control:
-            print("⚠️  缓冲控制未在初始化时启用")
+            debug_print("⚠️  缓冲控制未在初始化时启用")
             return False
-
+            
         if not self.buffer_control_thread:
-            self.buffer_control_thread = BufferControlThread(
-                self, control_freq=self.control_freq
-            )
-
-        if not self.buffer_control_thread.is_running():
-            success = self.buffer_control_thread.start()
-            if success:
-                debug_print("✅ 缓冲控制模式已启用")
-            return success
-        else:
-            debug_print("缓冲控制模式已在运行")
+            debug_print("❌ 缓冲控制线程未创建")
+            return False
+            
+        if self.buffer_control_thread.is_running():
+            debug_print("✓ 缓冲控制模式已在运行")
             return True
+            
+        success = self.buffer_control_thread.start()
+        if success:
+            debug_print("✅ 缓冲控制模式已启用")
+        return success
 
     def disable_buffered_control_mode(self):
         """禁用缓冲控制模式"""
@@ -2243,6 +2265,7 @@ class ICARM:
             start_time = time.time()
             log_counter = 0
 
+            iter_time = time.time()
             for i, point in enumerate(complete_trajectory):
                 # 提取位置和时间
                 target_positions_deg = point[:-1]
@@ -2255,15 +2278,21 @@ class ICARM:
 
                 # 有限的状态读取和日志记录（避免性能问题）
                 # if enable_logging and log_counter % 20 == 0:  # 每20个点记录一次
-                self._read_all_states(enable_logging=True)
+                # self._read_all_states(enable_logging=True,refresh=False)
+                self._read_all_states_from_feedback(enable_logging=True)
                 # else:
                 # 	# 使用快速状态读取，跳过日志记录
                 # 	self._read_all_states_fast()
 
                 log_counter += 1
+                if i == 1000:
+                    print(time.strftime("%H:%M:%S"), '----------- start traj ---------------')
+                        
 
+                if i == total_points - 1000:
+                    print( time.strftime("%H:%M:%S"), '----------- end traj ---------------')
                 # 进度报告
-                if verbose and i % 50 == 0:
+                if verbose and i % 1000 == 0:
                     progress = (i / total_points) * 100
                     elapsed = time.time() - start_time
                     avg_fps = i / elapsed if elapsed > 0 else 0
@@ -2274,7 +2303,11 @@ class ICARM:
                     print(
                         f"[{timestamp}]执行进度: {progress:.1f}% ({i}/{total_points}) - 平均FPS: {avg_fps:.1f}"
                     )
-
+                wait_t = self.target_dt - (time.time() - iter_time)
+                iter_time = time.time()
+                if wait_t >=0 : 
+                    # print('sleep for ', wait_t)
+                    time.sleep(wait_t)
         except KeyboardInterrupt:
             if verbose:
                 print("\n轨迹执行被用户中断")

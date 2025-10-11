@@ -65,6 +65,10 @@ class MotorProtocol(ABC):
         pass
 
     @abstractmethod
+    def refresh_motor_status(self, motor_id: int) -> bool:
+        pass
+
+    @abstractmethod
     def read_feedback(self, motor_id: int) -> MotorFeedback:
         """读取电机反馈"""
         pass
@@ -91,16 +95,14 @@ class DamiaoProtocol(MotorProtocol):
     def add_motor(self, motor_info: MotorInfo) -> bool:
         """添加达妙电机"""
         super().add_motor(motor_info)
-        motor= DM_Motor(
-                motor_info.motor_index,
-                Control_Mode.MIT_MODE,
-                motor_info.can_id,
-                motor_info.master_id,
-            )
-        self.motors[motor_info.motor_id] = motor
-        self.motor_control.addMotor(
-            motor
+        motor = DM_Motor(
+            motor_info.motor_index,
+            Control_Mode.MIT_MODE,
+            motor_info.can_id,
+            motor_info.master_id,
         )
+        self.motors[motor_info.motor_id] = motor
+        self.motor_control.addMotor(motor)
         return True
 
     def enable_motor(self, motor_id: int) -> bool:
@@ -161,6 +163,17 @@ class DamiaoProtocol(MotorProtocol):
         """达妙电机命令已在set_command中发送"""
         return True
 
+    def get_feedback_only(self, motor_id):
+        motor = self.motors[motor_id]
+        # 刷新电机状态
+        return MotorFeedback(
+            position=motor.Get_Position(),
+            velocity=motor.Get_Velocity(),
+            torque=motor.Get_tau(),
+            # error_code=0,  # 达妙电机暂时没有错误码，默认为0
+            # timestamp=time.time(),
+        )
+
     def read_feedback(self, motor_id: int) -> MotorFeedback:
         """读取达妙电机反馈"""
         motor = self.motors[motor_id]
@@ -175,6 +188,19 @@ class DamiaoProtocol(MotorProtocol):
             # error_code=0,  # 达妙电机暂时没有错误码，默认为0
             # timestamp=time.time(),
         )
+
+    def refresh_motor_status(self, motor_id: int) -> bool:
+        """刷新达妙电机状态"""
+        if motor_id not in self.motors:
+            return False
+        try:
+            motor = self.motors[motor_id]
+            self.motor_control.refresh_motor_status(motor)
+            return True
+        except Exception as e:
+            print(f"Failed to refresh Damiao motor {motor_id} status: {e}")
+            return False
+
     def set_zero_position(self, motor_id: int) -> bool:
         """设置达妙电机零位"""
         if motor_id not in self.motors:
@@ -219,18 +245,18 @@ class ServoProtocol(MotorProtocol):
         """添加伺服电机"""
 
         super().add_motor(motor_info)
-        servo =Servo_Motor(
-                self.usb_hw,
-                motor_info.motor_id,
-                motor_info.can_id,
-                motor_info.master_id,
-            )
+        servo = Servo_Motor(
+            self.usb_hw,
+            motor_info.motor_id,
+            motor_info.can_id,
+            motor_info.master_id,
+        )
         self.servo_manager.add_servo(
             # servo,
             motor_info.motor_id,
             motor_info.can_id,
             motor_info.master_id,
-            motor=servo
+            motor=servo,
         )
         self.motor_mapping[motor_info.motor_id] = servo
         self.motors[motor_info.motor_id] = servo
@@ -283,6 +309,23 @@ class ServoProtocol(MotorProtocol):
             # error_code=0,
             # timestamp=time.time()
         )
+
+    def get_feedback_only(self, motor_id):
+        return self.read_feedback(motor_id)
+
+    def refresh_motor_status(self, motor_id: int) -> bool:
+        """刷新伺服电机状态"""
+        if motor_id not in self.motor_mapping:
+            return False
+        try:
+            servo = self.motor_mapping[motor_id]
+            # 伺服电机可能需要主动请求状态更新
+            # servo.read_status()  # 如果有这个方法的话
+            return True
+        except Exception as e:
+            print(f"Failed to refresh Servo motor {motor_id} status: {e}")
+            return False
+
     def set_zero_position(self, motor_id: int) -> bool:
         """设置当前位置为零位"""
         # 舵机通常不支持软件零位设置
@@ -335,7 +378,6 @@ class HTProtocol(MotorProtocol):
         super().add_motor(motor_info)
         motor = self.ht_manager.add_motor(motor_info.motor_id)
         self.motors[motor_info.motor_id] = motor
-        
 
     def enable_motor(self, motor_id: int) -> bool:
         """HT电机使能（HT电机不支持单独enable，通过控制命令激活）"""
@@ -437,6 +479,31 @@ class HTProtocol(MotorProtocol):
             # error_code=motor.error,
             # timestamp=time.time(),
         )
+
+    def get_feedback_only(self, motor_id):
+        motor = self.motors[motor_id]
+        # 刷新电机状态
+
+        return MotorFeedback(
+            position=motor.position,
+            velocity=motor.velocity,
+            torque=motor.torque,
+            # error_code=motor.error,
+            # timestamp=time.time(),
+        )
+
+    def refresh_motor_status(self, motor_id: int) -> bool:
+        """刷新HT电机状态"""
+        if motor_id not in self.motors:
+            return False
+        try:
+            # HT电机使用批量刷新
+            self.ht_manager.refresh_motor_status()
+            return True
+        except Exception as e:
+            print(f"Failed to refresh HT motor {motor_id} status: {e}")
+            return False
+
     def set_zero_position(self, motor_id: int) -> bool:
         """设置HT电机零位"""
         if motor_id not in self.motors:
@@ -479,6 +546,9 @@ class UnifiedMotor:
         """获取速度"""
         return self.feedback.velocity
 
+    def get_feedback_only(self):
+        return self.feedback
+
     def get_torque(self) -> float:
         """获取力矩"""
         return self.feedback.torque
@@ -503,6 +573,7 @@ class UnifiedMotor:
         """更新状态"""
         self.feedback = self.protocol.read_feedback(self.motor_id)
         return True
+
     # 控制接口
     def set_command(
         self, pos: float, vel: float, kp: float, kd: float, tau: float
@@ -541,15 +612,16 @@ class CANFrameDispatcher:
     def _unified_callback(self, frame: can_value_type):
         """统一的CAN帧回调函数"""
         can_id = frame.head.id
-        # print(f"[RECV] from [{hex(frame.head.id)}]: {self.hexify(frame.data)}")
+        if can_id != 0x19:
+            print(f"[RECV] from [{hex(frame.head.id)}]: {self.hexify(frame.data)}")
         # 根据CAN ID范围分发到不同的协议处理器
         # 达妙电机: ID范围通常是 0x01-0x06, 0x11-0x16 等
         if can_id <= 0x16:  # 达妙电机ID范围
             if "damiao" in self.handlers:
                 self.handlers["damiao"](frame)
-        elif can_id <=0x19:
-            if 'servo' in self.handlers:
-                self.handlers['servo'](frame)
+        elif can_id <= 0x19:
+            if "servo" in self.handlers:
+                self.handlers["servo"](frame)
         # HT电机: ID范围通常是 0x700, 0x800 等
         elif can_id >= 0x700:  # HT电机ID范围
             if "ht" in self.handlers:
@@ -573,7 +645,7 @@ class MotorManager:
         """添加协议 - 自动识别协议类型并加载其中的电机"""
         if not protocol_type:
             protocol_type = self._identify_protocol_type(protocol_instance)
-        
+
         if protocol_type == "damiao":
             self.protocols["damiao"] = protocol_instance
             self.can_dispatcher.register_handler(
@@ -582,10 +654,10 @@ class MotorManager:
             # 加载达妙电机
             self._load_motors_from_protocol(protocol_instance, "damiao")
             return True
-            
+
         elif protocol_type == "ht":
             if "ht" not in self.protocols:
-                self.protocols["ht"] = protocol_instance 
+                self.protocols["ht"] = protocol_instance
                 self.can_dispatcher.register_handler(
                     "ht", protocol_instance.ht_manager.can_frame_callback
                 )
@@ -593,15 +665,21 @@ class MotorManager:
                 self._load_motors_from_protocol(protocol_instance, "ht")
                 return True
             return False
-            
+
         elif protocol_type == "servo":
             if "servo" not in self.protocols:
                 self.protocols["servo"] = protocol_instance
                 # 根据servo协议的实际结构注册回调
-                if hasattr(protocol_instance, 'servo_manager'):
-                    callback = getattr(protocol_instance.servo_manager, 'can_frame_callback', lambda x: None)
+                if hasattr(protocol_instance, "servo_manager"):
+                    callback = getattr(
+                        protocol_instance.servo_manager,
+                        "can_frame_callback",
+                        lambda x: None,
+                    )
                 else:
-                    callback = getattr(protocol_instance, 'can_frame_callback', lambda x: None)
+                    callback = getattr(
+                        protocol_instance, "can_frame_callback", lambda x: None
+                    )
                 self.can_dispatcher.register_handler("servo", callback)
                 # 加载舵机
                 self._load_motors_from_protocol(protocol_instance, "servo")
@@ -610,15 +688,15 @@ class MotorManager:
         else:
             print(f"Unknown protocol type: {type(protocol_instance).__name__}")
             return False
-    
+
     def _load_motors_from_protocol(self, protocol_instance, protocol_type):
         """从protocol实例中加载电机到manager"""
-        if hasattr(protocol_instance, 'motors') and protocol_instance.motors:
+        if hasattr(protocol_instance, "motors") and protocol_instance.motors:
             for motor_id, info in protocol_instance.motor_infos.items():
                 self.motor_infos[motor_id] = info
             for motor_id, motor_instance in protocol_instance.motors.items():
                 self.motor_cnt += 1
-                motor_info =None
+                motor_info = None
                 # motor_instance
                 # 创建基本的MotorInfo（可能需要根据实际情况调整）
                 # motor_info = MotorInfo(
@@ -628,17 +706,17 @@ class MotorManager:
                 # )
                 self.add_motor(motor_id, protocol_type, motor_info)
                 print(f"Loaded motor {motor_id} from {protocol_type} protocol")
-    
+
     def _identify_protocol_type(self, protocol_instance):
         """识别协议类型"""
         class_name = type(protocol_instance).__name__
-        
+
         # 通过类名识别
-        if "Motor_Control" in class_name or hasattr(protocol_instance, 'addMotor'):
+        if "Motor_Control" in class_name or hasattr(protocol_instance, "addMotor"):
             return "damiao"
-        elif "HTMotor" in class_name or hasattr(protocol_instance, 'mit_control'):
+        elif "HTMotor" in class_name or hasattr(protocol_instance, "mit_control"):
             return "ht"
-        elif "Servo" in class_name or hasattr(protocol_instance, 'add_servo'):
+        elif "Servo" in class_name or hasattr(protocol_instance, "add_servo"):
             return "servo"
         else:
             return "unknown"
@@ -653,7 +731,9 @@ class MotorManager:
             motor_infos_list: 电机信息列表，每个元素是 MotorInfo 对象
         """
         # 将列表转换为字典格式，以 motor_id 为键
-        motor_infos_dict = {motor_info.motor_id: motor_info for motor_info in motor_infos_list}
+        motor_infos_dict = {
+            motor_info.motor_id: motor_info for motor_info in motor_infos_list
+        }
 
         for motor_id, motor_info in motor_infos_dict.items():
             if motor_id in self.motor_infos:
@@ -662,18 +742,19 @@ class MotorManager:
                 if motor_id in self.motors:
                     self.motors[motor_id].info = motor_info
                     self.motors[motor_id].motor_info = motor_info
+
     # 向后兼容的方法
     def add_damiao_protocol(self, motor_control_instance):
         """添加达妙电机协议 - 向后兼容"""
-        return self.add_protocol(motor_control_instance, 'damiao')
+        return self.add_protocol(motor_control_instance, "damiao")
 
     def add_ht_protocol(self, ht_manager_instance):
         """添加HT电机协议 - 向后兼容"""
-        return self.add_protocol(ht_manager_instance, 'ht')
+        return self.add_protocol(ht_manager_instance, "ht")
 
     def add_servo_protocol(self, servo_manager_instance):
         """添加伺服电机协议 - 向后兼容"""
-        return self.add_protocol(servo_manager_instance, 'servo')
+        return self.add_protocol(servo_manager_instance, "servo")
 
     def add_motor(
         self, motor_id: int, motor_type: str, motor_info: MotorInfo, **config
@@ -684,7 +765,7 @@ class MotorManager:
             return False
 
         protocol = self.protocols[motor_type]
-        
+
         # 创建统一电机实例
         unified_motor = UnifiedMotor(motor_id, protocol, motor_info)
         self.motors[motor_id] = unified_motor
