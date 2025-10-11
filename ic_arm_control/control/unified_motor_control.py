@@ -146,18 +146,8 @@ class DamiaoProtocol(MotorProtocol):
     def set_command(
         self, motor_id: int, pos: float, vel: float, kp: float, kd: float, tau: float
     ) -> bool:
-        """设置达妙电机命令（立即发送）"""
-        if motor_id not in self.motors:
-            return False
+        self.motor_control.control_mit(self.motors[motor_id], kp, kd, pos, vel, tau)
 
-        try:
-            motor = self.motors[motor_id]
-            # 直接调用现有的control_mit方法
-            self.motor_control.control_mit(motor, kp, kd, pos, vel, tau)
-            return True
-        except Exception as e:
-            print(f"Failed to set command for Damiao motor {motor_id}: {e}")
-            return False
 
     def send_commands(self) -> bool:
         """达妙电机命令已在set_command中发送"""
@@ -547,6 +537,10 @@ class UnifiedMotor:
         return self.feedback.velocity
 
     def get_feedback_only(self):
+        return self.read_feedback() 
+
+    def read_feedback(self):
+        self.update_state()
         return self.feedback
 
     def get_torque(self) -> float:
@@ -560,6 +554,7 @@ class UnifiedMotor:
     # 完整状态接口
     def get_state(self) -> Dict[str, float]:
         """获取完整状态"""
+        self.update_state()
         return {
             "position": self.feedback.position,
             "velocity": self.feedback.velocity,
@@ -571,7 +566,7 @@ class UnifiedMotor:
     # @pysnooper.snoop()
     def update_state(self) -> bool:
         """更新状态"""
-        self.feedback = self.protocol.read_feedback(self.motor_id)
+        self.feedback = self.protocol.get_feedback_only(self.motor_id)
         return True
 
     # 控制接口
@@ -612,8 +607,8 @@ class CANFrameDispatcher:
     def _unified_callback(self, frame: can_value_type):
         """统一的CAN帧回调函数"""
         can_id = frame.head.id
-        if can_id != 0x19:
-            print(f"[RECV] from [{hex(frame.head.id)}]: {self.hexify(frame.data)}")
+        # if can_id != 0x19:
+            # print(f"[RECV] from [{hex(frame.head.id)}]: {self.hexify(frame.data)}")
         # 根据CAN ID范围分发到不同的协议处理器
         # 达妙电机: ID范围通常是 0x01-0x06, 0x11-0x16 等
         if can_id <= 0x16:  # 达妙电机ID范围

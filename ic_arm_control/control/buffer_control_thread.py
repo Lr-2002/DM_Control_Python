@@ -155,8 +155,13 @@ class BufferControlThread:
         """检查线程是否在运行"""
         with self.thread_lock:
             return self.running and self.thread and self.thread.is_alive()
-    
     # @pysnooper.snoop()
+    def once_send(self):
+        self._send_to_hardware(self.get_next_command())
+        self.loop_count += 1
+
+
+    @pysnooper.snoop()
     def _control_loop(self):
         """500Hz控制循环 - 核心控制逻辑"""
         print(f"[BufferControlThread] 开始500Hz控制循环...")
@@ -172,32 +177,7 @@ class BufferControlThread:
             loop_start_time = time.time()
             
             try:
-                # 1. 从队列按顺序获取下一个指令（非阻塞）
-                command = self.get_next_command()
-                
-                # 2. 检查是否有有效指令
-                # if (command['positions'] is not None or 
-                #     command['velocities'] is not None or 
-                #     command['torques'] is not None):
-                    
-                #     # 3. 安全检查优化 - 每20个周期检查一次，减少计算负担
-                #     if hasattr(self.icarm, 'safety_monitor') and self.loop_count % 20 == 0:
-                #         is_safe, safe_command = self.icarm.safety_monitor.check_command_safety(
-                #             command['positions'],
-                #             command['velocities'], 
-                #             command['torques']
-                #         )
-                        
-                #         if not is_safe:
-                #             # 使用安全的指令
-                #             command = safe_command
-                    
-                # 3. 发送到硬件层
-                self._send_to_hardware(command)
-                
-                # 5. 更新统计信息
-                self.loop_count += 1
-                
+                self.once_send()
             except Exception as e:
                 print(f"[BufferControlThread] ❌ 控制循环错误: {e}")
                 # 发生错误时发送零指令确保安全
@@ -230,6 +210,7 @@ class BufferControlThread:
         print('[BufferControlThread] 总共执行时间为', self.total_time)
         print('[BufferControlThread] 总共步长为', self.loop_count)
     
+    # @pysnooper.snoop()
     def _send_to_hardware(self, command: dict):
         """
         发送指令到硬件层 - 优化版本
@@ -237,19 +218,12 @@ class BufferControlThread:
         Args:
             command: 控制指令字典
         """
+        assert command['positions'] is not None and command['velocities'] is not None and command['torques'] is not None
         try:
-            # 优化: 只在有位置指令时发送，避免无效通信
-            if (command['positions'] is not None and 
-                len(command['positions']) > 0):
-                
-                # 预处理默认值，减少运行时计算
-                velocities = command['velocities'] if command['velocities'] is not None else self._zero_velocities
-                torques = command['torques'] if command['torques'] is not None else self._zero_torques
-                
-                # 直接调用底层方法，减少函数调用开销
-                self.icarm._original_set_joint_positions(
-                    command['positions'], velocities, torques
-                )
+            # 直接调用底层方法，减少函数调用开销
+            self.icarm._original_set_joint_positions(
+                command['positions'], command['velocities'], command['torques']
+            )
                 
         except Exception as e:
             print(f"[BufferControlThread] ❌ 硬件发送失败: {e}")

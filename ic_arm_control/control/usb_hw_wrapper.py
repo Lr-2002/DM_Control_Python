@@ -5,6 +5,7 @@ USB Hardware Wrapper
 提供对usb_class的包装，可以包装现有实例或创建新实例
 """
 
+import pysnooper
 from src import usb_class
 import signal 
 import time
@@ -74,14 +75,14 @@ class USBHardwareWrapper:
         支持上下文管理器协议
         """
         return self.usb_hw.__exit__(exc_type, exc_val, exc_tb)
-
+    @pysnooper.snoop()
     def fdcanFrameSend(self, data, idx):
-        print(f"Sending to [{hex(idx)}]: {[hex(i) for i in data]} ")
+        # print(f"Sending to [{hex(idx)}]: {[hex(i) for i in data]} ")
         # if idx >= 0xa0:
         #     print(1)
         # breakpoint()
         xx = self.usb_hw.fdcanFrameSend(data, idx)
-        time.sleep(0.00005)
+        # time.sleep(0.00005)
         return xx 
 
 

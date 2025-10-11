@@ -344,7 +344,7 @@ class ICARM:
         for i in range(self.motor_count):
             motor_id = i + 1
             motor = motors[motor_id]
-            feedback = motor.get_feedback_only()
+            feedback = motor.read_feedback()
             self.q[i] = feedback.position
             self.dq[i] = feedback.velocity
             self.tau[i] = feedback.torque
@@ -570,29 +570,21 @@ class ICARM:
             raise ValueError("Joint index must be 0-4")
 
     # ========== LOW-LEVEL WRITE FUNCTIONS ==========
-
+    @pysnooper.snoop()
     def _send_motor_command(
         self,
         motor_id,
         position_rad=0.0,
         velocity_rad_s=0.0,
         torque_nm=0.0,
-        kp=None,
-        kd=None,
+
     ):
         """Send command to a single motor using unified interface"""
         # print(" at send motor command ")
         motor = self.motor_manager.get_motor(motor_id)
         motor_info = self.motor_manager.get_motor_info(motor_id)
-        if motor is None:
-            return False
-        # if motor_id == 7 or motor_id==8 :
-        #     print("set_command", motor_id, position_rad, velocity_rad_s, motor_info.kp, motor_info.kd, torque_nm)
-        if kp is None:
-            kp = motor_info.kp
-        if kd is None:
-            kd = motor_info.kd
-        # print("the motor info is ", kp, kd, position_rad, velocity_rad_s, torque_nm)
+        kp = motor_info.kp
+        kd = motor_info.kd
         return motor.set_command(position_rad, velocity_rad_s, kp, kd, torque_nm)
 
     # ========== PUBLIC WRITE INTERFACES ==========
@@ -691,7 +683,7 @@ class ICARM:
             return self._original_set_joint_positions(
                 positions_rad, velocities_rad_s, torques_nm
             )
-
+    @pysnooper.snoop() 
     def _original_set_joint_positions(
         self, positions_rad, velocities_rad_s, torques_nm
     ):
