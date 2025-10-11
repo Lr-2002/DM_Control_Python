@@ -570,7 +570,7 @@ class ICARM:
             raise ValueError("Joint index must be 0-4")
 
     # ========== LOW-LEVEL WRITE FUNCTIONS ==========
-    @pysnooper.snoop()
+    # @pysnooper.snoop()
     def _send_motor_command(
         self,
         motor_id,
@@ -683,7 +683,7 @@ class ICARM:
             return self._original_set_joint_positions(
                 positions_rad, velocities_rad_s, torques_nm
             )
-    @pysnooper.snoop() 
+    # @pysnooper.snoop() 
     def _original_set_joint_positions(
         self, positions_rad, velocities_rad_s, torques_nm
     ):

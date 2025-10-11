@@ -364,7 +364,7 @@ class DmMotorManager:
         self.control_cmd(DM_Motor.GetCanId() + DM_Motor.GetMotorMode(), 0xFE)
         time.sleep(0.002)
 
-    @pysnooper.snoop()
+    # @pysnooper.snoop()
     def control_mit(self, DM_Motor, kp: float, kd: float, q: float, dq: float, tau: float):
         float_to_uint = lambda x, xmin, xmax, bits: int((x - xmin) / (xmax - xmin) * ((1 << bits) - 1))
 

@@ -161,7 +161,7 @@ class BufferControlThread:
         self.loop_count += 1
 
 
-    @pysnooper.snoop()
+    # @pysnooper.snoop()
     def _control_loop(self):
         """500Hz控制循环 - 核心控制逻辑"""
         print(f"[BufferControlThread] 开始500Hz控制循环...")
@@ -210,7 +210,7 @@ class BufferControlThread:
         print('[BufferControlThread] 总共执行时间为', self.total_time)
         print('[BufferControlThread] 总共步长为', self.loop_count)
     
-    # @pysnooper.snoop()
+    @pysnooper.snoop()
     def _send_to_hardware(self, command: dict):
         """
         发送指令到硬件层 - 优化版本

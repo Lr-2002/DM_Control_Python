@@ -75,7 +75,7 @@ class USBHardwareWrapper:
         支持上下文管理器协议
         """
         return self.usb_hw.__exit__(exc_type, exc_val, exc_tb)
-    @pysnooper.snoop()
+    # @pysnooper.snoop()
     def fdcanFrameSend(self, data, idx):
         # print(f"Sending to [{hex(idx)}]: {[hex(i) for i in data]} ")
         # if idx >= 0xa0:
