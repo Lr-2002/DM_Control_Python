@@ -38,6 +38,7 @@ from ic_arm_control.control.usb_hw_wrapper import USBHardwareWrapper
 from ic_arm_control.control.async_logger import AsyncLogManager
 from ic_arm_control.control.safety_monitor import SafetyMonitor
 from ic_arm_control.control.buffer_control_thread import BufferControlThread
+from ic_arm_control.control.optimized_buffer_control_thread import OptimizedBufferControlThread
 
 # 添加mlp_compensation和urdfly模块路径
 import sys
@@ -117,12 +118,14 @@ class ICARM:
         enable_buffered_control=True,
         control_freq=250,
         gc_only=False,
+        use_optimized_buffer=True,
     ):
         """Initialize IC ARM with unified motor control system"""
         self.debug = debug
         self.use_ht = True
         self.enable_buffered_control = enable_buffered_control
         self.control_freq = control_freq
+        self.use_optimized_buffer = use_optimized_buffer
         self.gc_type = gc_type  # 存储重力补偿类型
         debug_print("=== 初始化IC_ARM_Unified ===")
         self.target_dt = 1/ control_freq
@@ -299,12 +302,18 @@ class ICARM:
         self.safety_monitor = SafetyMonitor(motor_count=self.motor_count)
         # 缓冲控制线程 - 如果启用则立即创建并启动
         self.buffer_control_thread = None
-        
+
         if self.enable_buffered_control:
-            self.buffer_control_thread = BufferControlThread(
-                self, control_freq=self.control_freq
-            )
-            debug_print(f"✓ 缓冲控制线程已创建 (频率: {self.control_freq}Hz)")
+            if self.use_optimized_buffer:
+                self.buffer_control_thread = OptimizedBufferControlThread(
+                    self, control_freq=self.control_freq
+                )
+                debug_print(f"✓ 优化版缓冲控制线程已创建 (频率: {self.control_freq}Hz)")
+            else:
+                self.buffer_control_thread = BufferControlThread(
+                    self, control_freq=self.control_freq
+                )
+                debug_print(f"✓ 缓冲控制线程已创建 (频率: {self.control_freq}Hz)")
         else:
             debug_print("缓冲控制未启用，使用传统控制模式")
 
@@ -1241,7 +1250,7 @@ class ICARM:
 
             # 生成平滑轨迹到零位
             num_steps = max(
-                10, int(estimated_time * frequency)
+                100, int(estimated_time * frequency)
             )  # 至少10步，或按100Hz计算
             dt = estimated_time / num_steps
 

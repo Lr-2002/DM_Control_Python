@@ -77,7 +77,7 @@ class USBHardwareWrapper:
         return self.usb_hw.__exit__(exc_type, exc_val, exc_tb)
     # @pysnooper.snoop()
     def fdcanFrameSend(self, data, idx):
-        # print(f"Sending to [{hex(idx)}]: {[hex(i) for i in data]} ")
+        print(f"time : {time.time()} | Sending to [{hex(idx)}]: {[hex(i) for i in data]} ")
         # if idx >= 0xa0:
         #     print(1)
         # breakpoint()

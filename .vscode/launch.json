@@ -1,37 +1,54 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "Python Debugger: ht gui",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/ht_gui_controller.py",
-            "console": "integratedTerminal"
-        },
-        {
-            "name": "Python Debugger: current file",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${file}",
-            "console": "integratedTerminal"
-        },
-        {
-            "name": "Python Debugger: position monitor",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/position_monitor.py",
-            "console": "integratedTerminal"
-        },
-        {
-            "name": "Python Debugger: zero position",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/test_home_to_zero.py",
-            "console": "integratedTerminal"
-        }
+	// Use IntelliSense to learn about possible attributes.
+	// Hover to view descriptions of existing attributes.
+	// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+	"version": "0.2.0",
+	"configurations": [
+		{
+			"name": "Python Debugger: ht gui",
+			"type": "debugpy",
+			"request": "launch",
+			"program": "${workspaceFolder}/ht_gui_controller.py",
+			"console": "integratedTerminal"
+		},
+		{
+			"name": "Python Debugger: current file",
+			"type": "debugpy",
+			"request": "launch",
+			"program": "${file}",
+			"console": "integratedTerminal"
+		},
+		{
+			"name": "Python Debugger: position monitor",
+			"type": "debugpy",
+			"request": "launch",
+			"program": "${workspaceFolder}/position_monitor.py",
+			"console": "integratedTerminal"
+		},
+		{
+			"name": "Python Debugger: zero position",
+			"type": "debugpy",
+			"request": "launch",
+			"program": "${workspaceFolder}/test_home_to_zero.py",
+			"console": "integratedTerminal"
+		},
+		{
+			"name": "Python Debugger: trajectory executor",
+			"type": "debugpy",
+			"request": "launch",
+			"program": "${workspaceFolder}/ic_arm_control/tools/trajectory_executor.py",
+			"args": ["trajectory_motor_4_single_safe.json", "ic_arm", "1"],
+			"console": "integratedTerminal"
+		}
+		,
+		{
+			"name": "Python Debugger: trajectory executor for 250 hz",
+			"type": "debugpy",
+			"request": "launch",
+			"program": "${workspaceFolder}/ic_arm_control/tools/trajectory_executor.py",
+			"args": ["/Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm_control/control/di_data_from_gh/ptrnSrch_N15T25QR_trajectory_250hz.json", "ic_arm"],
+			"console": "integratedTerminal"
+		}
 
-    ]
+	]
 }
