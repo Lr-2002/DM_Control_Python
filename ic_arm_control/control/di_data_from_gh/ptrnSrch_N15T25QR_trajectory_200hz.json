@@ -1,4 +1,5 @@
 {
+  "frequency": 200,
   "time": [
     0.0,
     0.005,
@@ -125035,7 +125036,7 @@
   "metadata": {
     "source_file": "ptrnSrch_N15T25QR.mat",
     "source_type": "matlab_optimization",
-    "generation_time": "2025-10-11T15:30:58.853324",
+    "generation_time": "2025-10-15T09:43:42.229395",
     "num_joints": 6,
     "num_points": 5001,
     "duration": 25.0,

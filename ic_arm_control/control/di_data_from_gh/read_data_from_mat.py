@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import json
 import os
 from datetime import datetime
-control_freq = 200
+control_freq = 400
 def read_mat_file(mat_file_path):
 	"""
 	读取MAT文件并返回数据结构
@@ -195,6 +195,7 @@ def save_trajectory_for_executor(t, q, qd, q2d, mat_file_path):
 	
 	# 构建轨迹字典
 	trajectory = {
+		'frequency': control_freq,
 		'time': t.tolist(),
 		'positions': positions.tolist(),
 		'velocities': velocities.tolist(),
