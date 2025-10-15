@@ -234,7 +234,7 @@ def save_trajectory_for_executor(t, q, qd, q2d, mat_file_path):
 	print(f"  python tools/trajectory_executor.py {output_filename} ic_arm")
 
 def main():
-	mat_file_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm_control/control/di_data_from_gh/ptrnSrch_N15T25QR.mat"
+	mat_file_path = "/Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm_control/control/di_data_from_gh/ptrnSrch_N12T25QR.mat"
 
 	data = read_mat_file(mat_file_path)
 	
