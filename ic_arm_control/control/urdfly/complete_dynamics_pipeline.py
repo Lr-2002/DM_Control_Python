@@ -250,41 +250,80 @@ class CompleteDynamicsPipeline:
         Y = linearization_results['regressor_matrix']
         tau_vec = linearization_results['torque_vector']
 
+        # 分割训练集和测试集 (80%训练, 20%测试)
+        print(f"\n分割训练集和测试集...")
+        total_samples = Y.shape[0]
+        train_size = int(0.8 * total_samples)
+
+        # 随机打乱数据
+        indices = np.random.permutation(total_samples)
+        train_indices = indices[:train_size]
+        test_indices = indices[train_size:]
+
+        Y_train = Y[train_indices]
+        tau_train = tau_vec[train_indices]
+        Y_test = Y[test_indices]
+        tau_test = tau_vec[test_indices]
+
+        print(f"  总样本数: {total_samples}")
+        print(f"  训练集: {len(train_indices)} 样本")
+        print(f"  测试集: {len(test_indices)} 样本")
+
         # 尝试不同的辨识方法
         methods = ['least_squares', 'ridge', 'lasso']
         identification_results = {}
 
         for method in methods:
-            print(f"\n使用 {method} 方法...")
+            print(f"\n使用 {method} 方法训练...")
 
             try:
+                # 在训练集上辨识参数
                 theta_identified, identification_info = self.linearizer.identify_parameters(
-                    Y, tau_vec, method=method, regularization=0.01
+                    Y_train, tau_train, method=method, regularization=0.01
                 )
+
+                # 在训练集和测试集上分别评估
+                tau_pred_train = Y_train @ theta_identified
+                tau_pred_test = Y_test @ theta_identified
+
+                train_rmse = np.sqrt(np.mean((tau_train - tau_pred_train) ** 2))
+                test_rmse = np.sqrt(np.mean((tau_test - tau_pred_test) ** 2))
+                train_r2 = 1 - np.sum((tau_train - tau_pred_train) ** 2) / np.sum((tau_train - np.mean(tau_train)) ** 2)
+                test_r2 = 1 - np.sum((tau_test - tau_pred_test) ** 2) / np.sum((tau_test - np.mean(tau_test)) ** 2)
 
                 identification_results[method] = {
                     'theta': theta_identified,
-                    'info': identification_info
+                    'info': identification_info,
+                    'train_rmse': train_rmse,
+                    'test_rmse': test_rmse,
+                    'train_r2': train_r2,
+                    'test_r2': test_r2,
+                    'train_predictions': tau_pred_train,
+                    'test_predictions': tau_pred_test,
+                    'train_targets': tau_train,
+                    'test_targets': tau_test
                 }
 
                 print(f"{method} 方法完成:")
-                print(f"  RMSE: {identification_info['rmse']:.6f}")
-                print(f"  R²: {identification_info['r2']:.6f}")
+                print(f"  训练集 - RMSE: {train_rmse:.6f}, R²: {train_r2:.6f}")
+                print(f"  测试集 - RMSE: {test_rmse:.6f}, R²: {test_r2:.6f}")
 
             except Exception as e:
                 print(f"{method} 方法失败: {e}")
                 identification_results[method] = None
 
-        # 选择最佳方法
+        # 选择最佳方法 (基于测试集R²)
         best_method = None
-        best_r2 = -np.inf
+        best_test_r2 = -np.inf
 
         for method, result in identification_results.items():
-            if result is not None and result['info']['r2'] > best_r2:
-                best_r2 = result['info']['r2']
+            if result is not None and result['test_r2'] > best_test_r2:
+                best_test_r2 = result['test_r2']
                 best_method = method
 
-        print(f"\n最佳方法: {best_method} (R² = {best_r2:.6f})")
+        print(f"\n最佳方法: {best_method}")
+        print(f"  测试集 R² = {best_test_r2:.6f}")
+        print(f"  测试集 RMSE = {identification_results[best_method]['test_rmse']:.6f}")
 
         # 使用最佳方法更新模型
         if best_method is not None:
@@ -300,7 +339,7 @@ class CompleteDynamicsPipeline:
         return {
             'all_methods': identification_results,
             'best_method': best_method,
-            'best_r2': best_r2
+            'best_test_r2': best_test_r2
         }
 
     def _validate_results(self, identification_results: Dict, output_dir: str) -> Dict:
@@ -376,8 +415,8 @@ class CompleteDynamicsPipeline:
         print(f"  辨识参数RMSE: {validation_info['identified_rmse']:.6f}")
         print(f"  改进比例: {validation_info['improvement_ratio']:.2f}x")
 
-        # 绘制验证图表
-        self._plot_validation_results(tau_vec, tau_pred_original, tau_pred_identified, output_dir)
+        # 绘制训练集/测试集验证图表
+        self._plot_validation_results(identification_results, output_dir)
 
         return {
             'param_comparison': param_comparison,
@@ -385,56 +424,144 @@ class CompleteDynamicsPipeline:
             'save_file': validation_file
         }
 
-    def _plot_validation_results(self, tau_vec: np.ndarray, tau_pred_original: np.ndarray,
-                                tau_pred_identified: np.ndarray, output_dir: str):
-        """绘制验证结果图表"""
-        print("绘制验证图表...")
+    def _plot_validation_results(self, identification_results: Dict, output_dir: str):
+        """Plot validation results charts with train/test split"""
+        print("Plotting validation charts...")
 
-        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        # 获取最佳方法的结果
+        best_method = None
+        best_test_r2 = -np.inf
+        for method, result in identification_results['all_methods'].items():
+            if result is not None and result['test_r2'] > best_test_r2:
+                best_test_r2 = result['test_r2']
+                best_method = method
 
-        # 1. 原始参数预测
-        axes[0, 0].scatter(tau_vec, tau_pred_original, alpha=0.5, s=1)
-        axes[0, 0].plot([tau_vec.min(), tau_vec.max()], [tau_vec.min(), tau_vec.max()], 'r--')
-        axes[0, 0].set_title('原始参数预测')
-        axes[0, 0].set_xlabel('实际力矩')
-        axes[0, 0].set_ylabel('预测力矩')
+        if best_method is None:
+            print("No valid method found for plotting")
+            return
+
+        result = identification_results['all_methods'][best_method]
+
+        # 创建2x3的子图
+        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+        fig.suptitle(f'Train/Test Validation Results - Best Method: {best_method.upper()}', fontsize=16)
+
+        # 1. 训练集预测结果
+        axes[0, 0].scatter(result['train_targets'], result['train_predictions'], alpha=0.5, s=1, color='blue')
+        min_val = min(result['train_targets'].min(), result['train_predictions'].min())
+        max_val = max(result['train_targets'].max(), result['train_predictions'].max())
+        axes[0, 0].plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2)
+        axes[0, 0].set_title(f'Training Set Prediction (R²={result["train_r2"]:.4f})')
+        axes[0, 0].set_xlabel('Actual Torque')
+        axes[0, 0].set_ylabel('Predicted Torque')
         axes[0, 0].grid(True)
+        axes[0, 0].text(0.05, 0.95, f'RMSE: {result["train_rmse"]:.4f}', transform=axes[0, 0].transAxes,
+                       bbox=dict(boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.7))
 
-        # 2. 辨识参数预测
-        axes[0, 1].scatter(tau_vec, tau_pred_identified, alpha=0.5, s=1)
-        axes[0, 1].plot([tau_vec.min(), tau_vec.max()], [tau_vec.min(), tau_vec.max()], 'r--')
-        axes[0, 1].set_title('辨识参数预测')
-        axes[0, 1].set_xlabel('实际力矩')
-        axes[0, 1].set_ylabel('预测力矩')
+        # 2. 测试集预测结果
+        axes[0, 1].scatter(result['test_targets'], result['test_predictions'], alpha=0.5, s=1, color='green')
+        min_val = min(result['test_targets'].min(), result['test_predictions'].min())
+        max_val = max(result['test_targets'].max(), result['test_predictions'].max())
+        axes[0, 1].plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2)
+        axes[0, 1].set_title(f'Test Set Prediction (R²={result["test_r2"]:.4f})')
+        axes[0, 1].set_xlabel('Actual Torque')
+        axes[0, 1].set_ylabel('Predicted Torque')
         axes[0, 1].grid(True)
+        axes[0, 1].text(0.05, 0.95, f'RMSE: {result["test_rmse"]:.4f}', transform=axes[0, 1].transAxes,
+                       bbox=dict(boxstyle="round,pad=0.3", facecolor="yellow", alpha=0.7))
 
-        # 3. 残差对比
-        residual_original = tau_vec - tau_pred_original
-        residual_identified = tau_vec - tau_pred_identified
+        # 3. 训练集vs测试集对比
+        axes[0, 2].scatter(result['train_targets'], result['train_predictions'], alpha=0.3, s=1, color='blue', label='Training Set')
+        axes[0, 2].scatter(result['test_targets'], result['test_predictions'], alpha=0.5, s=1, color='green', label='Test Set')
+        min_val = min(result['train_targets'].min(), result['test_targets'].min(), result['train_predictions'].min(), result['test_predictions'].min())
+        max_val = max(result['train_targets'].max(), result['test_targets'].max(), result['train_predictions'].max(), result['test_predictions'].max())
+        axes[0, 2].plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2)
+        axes[0, 2].set_title('Training vs Test Set Comparison')
+        axes[0, 2].set_xlabel('Actual Torque')
+        axes[0, 2].set_ylabel('Predicted Torque')
+        axes[0, 2].legend()
+        axes[0, 2].grid(True)
 
-        axes[1, 0].hist(residual_original, bins=50, alpha=0.7, label='原始参数', density=True)
-        axes[1, 0].hist(residual_identified, bins=50, alpha=0.7, label='辨识参数', density=True)
-        axes[1, 0].set_title('残差分布对比')
-        axes[1, 0].set_xlabel('残差')
-        axes[1, 0].set_ylabel('密度')
+        # 4. 残差分布对比
+        residual_train = result['train_targets'] - result['train_predictions']
+        residual_test = result['test_targets'] - result['test_predictions']
+
+        axes[1, 0].hist(residual_train, bins=50, alpha=0.7, label=f'Training (RMSE: {result["train_rmse"]:.3f})', density=True, color='blue')
+        axes[1, 0].hist(residual_test, bins=50, alpha=0.7, label=f'Test (RMSE: {result["test_rmse"]:.3f})', density=True, color='green')
+        axes[1, 0].set_title('Residual Distribution Comparison')
+        axes[1, 0].set_xlabel('Residual')
+        axes[1, 0].set_ylabel('Density')
         axes[1, 0].legend()
         axes[1, 0].grid(True)
 
-        # 4. 误差时间序列
-        sample_indices = np.arange(len(tau_vec))[:1000]  # 只显示前1000个点
-        axes[1, 1].plot(sample_indices, residual_original[sample_indices], alpha=0.7, label='原始参数')
-        axes[1, 1].plot(sample_indices, residual_identified[sample_indices], alpha=0.7, label='辨识参数')
-        axes[1, 1].set_title('预测误差时间序列')
-        axes[1, 1].set_xlabel('样本索引')
-        axes[1, 1].set_ylabel('误差')
+        # 5. 残差vs实际值 (检查异方差性)
+        axes[1, 1].scatter(result['train_targets'], residual_train, alpha=0.3, s=1, color='blue', label='Training Set')
+        axes[1, 1].scatter(result['test_targets'], residual_test, alpha=0.5, s=1, color='green', label='Test Set')
+        axes[1, 1].axhline(y=0, color='r', linestyle='--', alpha=0.7)
+        axes[1, 1].set_title('Residuals vs Actual Values')
+        axes[1, 1].set_xlabel('Actual Torque')
+        axes[1, 1].set_ylabel('Residual')
         axes[1, 1].legend()
         axes[1, 1].grid(True)
 
+        # 6. 方法性能对比
+        methods = []
+        train_r2s = []
+        test_r2s = []
+        train_rmses = []
+        test_rmses = []
+
+        for method, res in identification_results['all_methods'].items():
+            if res is not None:
+                methods.append(method.upper())
+                train_r2s.append(res['train_r2'])
+                test_r2s.append(res['test_r2'])
+                train_rmses.append(res['train_rmse'])
+                test_rmses.append(res['test_rmse'])
+
+        x = np.arange(len(methods))
+        width = 0.35
+
+        ax1 = axes[1, 2]
+        ax2 = ax1.twinx()
+
+        bars1 = ax1.bar(x - width/2, train_r2s, width, label='Train R²', alpha=0.7, color='blue')
+        bars2 = ax1.bar(x + width/2, test_r2s, width, label='Test R²', alpha=0.7, color='green')
+
+        ax1.set_xlabel('Method')
+        ax1.set_ylabel('R²')
+        ax1.set_title('Method Performance Comparison')
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(methods)
+        ax1.legend(loc='upper left')
+        ax1.grid(True, alpha=0.3)
+
+        # 添加RMSE数值标签
+        for i, (train_rmse, test_rmse) in enumerate(zip(train_rmses, test_rmses)):
+            ax1.text(i - width/2, train_r2s[i] + 0.01, f'{train_rmse:.3f}', ha='center', va='bottom', fontsize=8)
+            ax1.text(i + width/2, test_r2s[i] + 0.01, f'{test_rmse:.3f}', ha='center', va='bottom', fontsize=8)
+
         plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, "validation_results.png"), dpi=300, bbox_inches='tight')
+        plt.savefig(os.path.join(output_dir, "train_test_validation_results.png"), dpi=300, bbox_inches='tight')
         plt.close()
 
-        print(f"验证图表已保存: validation_results.png")
+        # 保存数值结果到文件
+        with open(os.path.join(output_dir, "train_test_results.json"), 'w') as f:
+            json.dump({
+                'best_method': best_method,
+                'best_test_r2': best_test_r2,
+                'methods_comparison': {
+                    method: {
+                        'train_rmse': result['train_rmse'],
+                        'test_rmse': result['test_rmse'],
+                        'train_r2': result['train_r2'],
+                        'test_r2': result['test_r2']
+                    } for method, result in identification_results['all_methods'].items() if result is not None
+                }
+            }, f, indent=2)
+
+        print(f"Train/Test validation chart saved: train_test_validation_results.png")
+        print(f"Train/Test numerical results saved: train_test_results.json")
 
     def _generate_report(self, output_dir: str):
         """生成辨识报告"""

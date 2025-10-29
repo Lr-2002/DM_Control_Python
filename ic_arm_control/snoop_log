@@ -1,0 +1,501 @@
+Config loaded from: /Users/lr-2002/project/instantcreation/IC_arm_control/config.yaml
+轨迹执行器初始化: 模式=ic_arm, 关节数=6, 速度倍数=1.0
+sys platform cpython-310-darwin
+Successfully loaded usb_class from /Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm_control/control/src/usb_class.cpython-310-darwin.so
+sys platform cpython-310-darwin
+Successfully loaded usb_class from /Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm_control/control/src/usb_class.cpython-310-darwin.so
+[11:45:19.970] [IC_ARM-INFO] === 初始化IC_ARM_Unified ===
+Found DM-FDCAN, device-id: device:0,7 SN: F561E08C892274DB09496BCC1102DBC5
+Choose usb device is device:0,7
+Claimed interface 0
+Claimed interface 1
+Claimed interface 2
+ACK successful
+CMD_START_CAP ACK SUCCESS
+Set the arbitration domain baud rate: 1000000.0
+Set the data baud rate: 5000000.0
+Sampling point: 87.5%
+ACK successful
+CMD_SETUP_BUARD ACK SUCCESS
+Heart thread started
+USB receiving thread started
+totally inited  0 motors 
+**********Motor_Control init success**********
+
+Registered CAN frame handler for damiao
+Loaded motor 1 from damiao protocol
+Loaded motor 2 from damiao protocol
+Loaded motor 3 from damiao protocol
+Loaded motor 4 from damiao protocol
+Loaded motor 5 from damiao protocol
+Loaded motor 6 from damiao protocol
+Registered CAN frame handler for ht
+Loaded motor 7 from ht protocol
+Loaded motor 8 from ht protocol
+Registered CAN frame handler for servo
+Loaded motor 9 from servo protocol
+[11:45:21.933] [IC_ARM-INFO] ✓ 内部状态变量验证通过
+[11:45:21.933] [IC_ARM-INFO] Enabling all motors...
+[11:45:22.086] [IC_ARM-INFO] All motors enabled successfully
+[11:45:22.086] [IC_ARM-INFO] Waiting for motors to stabilize...
+[11:45:24.091] [IC_ARM-INFO] ⚠️  缓冲控制线程未创建
+[11:45:24.091] [IC_ARM-INFO] 重力补偿未启用
+[AsyncLogManager] 日志系统已启动，会话目录: /Users/lr-2002/project/instantcreation/IC_arm_control/logs/20251011_114524_ic_arm_control
+[11:45:24.093] [IC_ARM-INFO] ✓ 异步日志系统已启动
+[SafetyMonitor] 安全监控器已初始化，监控9个电机
+ buffer control thread dt is  0.004
+[BufferControlThread] 控制线程已初始化，频率: 250Hz, 周期: 4.00ms
+[11:45:24.093] [IC_ARM-INFO] ✓ 缓冲控制线程已创建 (频率: 250Hz)
+IC_ARM硬件初始化成功
+加载轨迹文件: /Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm_control/control/di_data_from_gh/ptrnSrch_N15T25QR_trajectory_250hz.json
+轨迹加载完成: 6251 个数据点, 持续时间: 25.00秒
+开始执行轨迹 (模式: ic_arm, 速度: 1.0x)
+IC_ARM硬件执行轨迹...
+启用所有电机...
+[11:45:24.148] [IC_ARM-INFO] Enabling all motors...
+[11:45:24.292] [IC_ARM-INFO] All motors enabled successfully
+[11:45:24.292] [IC_ARM-INFO] Waiting for motors to stabilize...
+[BufferControlThread] ✅ 控制线程已启动 (频率: 250Hz, 周期: 4.00ms)
+[11:45:26.298] [IC_ARM-INFO] ✓ 缓冲控制线程已启动
+当前位置: ['-0.3°', '-8.2°', '2.2°', '3.0°', '12.7°', '1.5°', '0.0°', '0.0°', '0.0°']
+生成平滑开始轨迹: 4.0秒
+从 ['-0.3°', '-8.2°', '2.2°', '3.0°', '12.7°', '1.5°', '0.0°', '0.0°', '0.0°'] 到 ['20.0°', '0.0°', '0.0°', '0.0°', '0.0°', '0.0°', '0.0°', '0.0°', '0.0°']
+生成平滑结束轨迹: 4.0秒
+从 ['20.0°', '-0.0°', '-0.0°', '0.0°', '-0.0°', '-0.0°', '0.0°', '0.0°', '0.0°'] 到 ['0.0°', '0.0°', '0.0°', '0.0°', '0.0°', '0.0°', '0.0°', '0.0°', '0.0°']
+[BufferControlThread] 开始500Hz控制循环...
+执行完整轨迹: 8252 个轨迹点
+  - 平滑开始: 1001 点
+  - 主轨迹: 6251 点
+  - 平滑结束: 1000 点
+[11:45:26.313]执行进度: 0.0% (0/8252) - 平均FPS: 0.0
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+
+Interrupt signal received. Exiting...
+禁用所有电机...
+[11:45:28.113] [IC_ARM-INFO] Disabling all motors...
+[BufferControlThread] 控制循环已退出
+[BufferControlThread] 总共执行时间为 1.7755405902862549
+[BufferControlThread] 总共步长为 210
+[BufferControlThread] ✅ 控制线程已停止
+[11:45:28.114] [IC_ARM-INFO] ✓ 缓冲控制线程已停止
+[11:45:28.167] [IC_ARM-INFO] All motors disabled successfully
+[11:45:28.168] [IC_ARM-INFO] Disabling all motors...
+[11:45:28.229] [IC_ARM-INFO] All motors disabled successfully
+
+Interrupt signal received. Exiting...
+[Error] In get_data_thread,Usb_rec err, err_code=19, failed: [[Errno 19] No such device (it may have been disconnected)]
+Released USB device resources
+**********USB Cleaned up**********
+
+[AsyncLogManager] 日志系统已停止，总日志数: 622, 丢弃: 0
+[11:45:28.237] [IC_ARM-INFO] ✓ 日志系统已关闭
+[11:45:28.237] [IC_ARM-INFO] Disabling all motors...
+Failed to disable Damiao motor 1: 'NoneType' object has no attribute 'write'
+Failed to disable Damiao motor 2: 'NoneType' object has no attribute 'write'
+Failed to disable Damiao motor 3: 'NoneType' object has no attribute 'write'
+Failed to disable Damiao motor 4: 'NoneType' object has no attribute 'write'
+Failed to disable Damiao motor 5: 'NoneType' object has no attribute 'write'
+Failed to disable Damiao motor 6: 'NoneType' object has no attribute 'write'
+Error sending CAN frame: 'NoneType' object has no attribute 'write'
+Error sending CAN frame: 'NoneType' object has no attribute 'write'
+舵机 9 发送命令失败: 'NoneType' object has no attribute 'write'
+[11:45:28.238] [IC_ARM-ERROR] Failed to disable all motors
+ICARM connection closed
+Config loaded from: /Users/lr-2002/project/instantcreation/IC_arm_control/config.yaml
+轨迹执行器初始化: 模式=ic_arm, 关节数=6, 速度倍数=1.0
+sys platform cpython-310-darwin
+Successfully loaded usb_class from /Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm_control/control/src/usb_class.cpython-310-darwin.so
+sys platform cpython-310-darwin
+Successfully loaded usb_class from /Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm_control/control/src/usb_class.cpython-310-darwin.so
+[11:45:57.801] [IC_ARM-INFO] === 初始化IC_ARM_Unified ===
+Found DM-FDCAN, device-id: device:0,7 SN: F561E08C892274DB09496BCC1102DBC5
+Choose usb device is device:0,7
+Claimed interface 0
+Claimed interface 1
+Claimed interface 2
+ACK successful
+CMD_START_CAP ACK SUCCESS
+Set the arbitration domain baud rate: 1000000.0
+Set the data baud rate: 5000000.0
+Sampling point: 87.5%
+ACK successful
+CMD_SETUP_BUARD ACK SUCCESS
+Heart thread started
+USB receiving thread started
+totally inited  0 motors 
+**********Motor_Control init success**********
+
+Registered CAN frame handler for damiao
+Loaded motor 1 from damiao protocol
+Loaded motor 2 from damiao protocol
+Loaded motor 3 from damiao protocol
+Loaded motor 4 from damiao protocol
+Loaded motor 5 from damiao protocol
+Loaded motor 6 from damiao protocol
+Registered CAN frame handler for ht
+Loaded motor 7 from ht protocol
+Loaded motor 8 from ht protocol
+Registered CAN frame handler for servo
+Loaded motor 9 from servo protocol
+[11:45:59.763] [IC_ARM-INFO] ✓ 内部状态变量验证通过
+[11:45:59.763] [IC_ARM-INFO] Enabling all motors...
+[11:45:59.915] [IC_ARM-INFO] All motors enabled successfully
+[11:45:59.915] [IC_ARM-INFO] Waiting for motors to stabilize...
+[11:46:01.918] [IC_ARM-INFO] ⚠️  缓冲控制线程未创建
+[11:46:01.918] [IC_ARM-INFO] 重力补偿未启用
+[AsyncLogManager] 日志系统已启动，会话目录: /Users/lr-2002/project/instantcreation/IC_arm_control/logs/20251011_114601_ic_arm_control
+[11:46:01.920] [IC_ARM-INFO] ✓ 异步日志系统已启动
+[SafetyMonitor] 安全监控器已初始化，监控9个电机
+ buffer control thread dt is  0.004
+[BufferControlThread] 控制线程已初始化，频率: 250Hz, 周期: 4.00ms
+[11:46:01.920] [IC_ARM-INFO] ✓ 缓冲控制线程已创建 (频率: 250Hz)
+IC_ARM硬件初始化成功
+加载轨迹文件: /Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm_control/control/di_data_from_gh/ptrnSrch_N15T25QR_trajectory_250hz.json
+轨迹加载完成: 6251 个数据点, 持续时间: 25.00秒
+开始执行轨迹 (模式: ic_arm, 速度: 1.0x)
+IC_ARM硬件执行轨迹...
+启用所有电机...
+[11:46:01.972] [IC_ARM-INFO] Enabling all motors...
+[11:46:02.113] [IC_ARM-INFO] All motors enabled successfully
+[11:46:02.113] [IC_ARM-INFO] Waiting for motors to stabilize...
+[BufferControlThread] ✅ 控制线程已启动 (频率: 250Hz, 周期: 4.00ms)
+[11:46:04.119] [IC_ARM-INFO] ✓ 缓冲控制线程已启动
+当前位置: ['-0.3°', '-8.3°', '2.4°', '3.0°', '12.8°', '1.5°', '0.0°', '0.0°', '0.0°']
+生成平滑开始轨迹: 4.0秒
+从 ['-0.3°', '-8.3°', '2.4°', '3.0°', '12.8°', '1.5°', '0.0°', '0.0°', '0.0°'] 到 ['20.0°', '0.0°', '0.0°', '0.0°', '0.0°', '0.0°', '0.0°', '0.0°', '0.0°']
+生成平滑结束轨迹: 4.0秒
+从 ['20.0°', '-0.0°', '-0.0°', '0.0°', '-0.0°', '-0.0°', '0.0°', '0.0°', '0.0°'] 到 ['0.0°', '0.0°', '0.0°', '0.0°', '0.0°', '0.0°', '0.0°', '0.0°', '0.0°']
+执行完整轨迹: 8252 个轨迹点
+  - 平滑开始: 1001 点
+  - 主轨迹: 6251 点
+  - 平滑结束: 1000 点
+[11:46:04.133]执行进度: 0.0% (0/8252) - 平均FPS: 0.0
+[BufferControlThread] 开始500Hz控制循环...
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+[BufferControlThread] ⚠️ 队列持续满载，可能存在性能问题
+
+Interrupt signal received. Exiting...
+禁用所有电机...
+[11:46:05.315] [IC_ARM-INFO] Disabling all motors...
+[BufferControlThread] 控制循环已退出
+[BufferControlThread] 总共执行时间为 1.1662094593048096
+[BufferControlThread] 总共步长为 145
+[BufferControlThread] ✅ 控制线程已停止
+[11:46:05.319] [IC_ARM-INFO] ✓ 缓冲控制线程已停止
+[11:46:05.373] [IC_ARM-INFO] All motors disabled successfully
+Config loaded from: /Users/lr-2002/project/instantcreation/IC_arm_control/config.yaml
+轨迹执行器初始化: 模式=ic_arm, 关节数=6, 速度倍数=1.0
+sys platform cpython-310-darwin
+Successfully loaded usb_class from /Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm_control/control/src/usb_class.cpython-310-darwin.so
+sys platform cpython-310-darwin
+Successfully loaded usb_class from /Users/lr-2002/project/instantcreation/IC_arm_control/ic_arm_control/control/src/usb_class.cpython-310-darwin.so
+[11:47:09.654] [IC_ARM-INFO] === 初始化IC_ARM_Unified ===
+Found DM-FDCAN, device-id: device:0,7 SN: F561E08C892274DB09496BCC1102DBC5
+Choose usb device is device:0,7
+Claimed interface 0
+Claimed interface 1
+Claimed interface 2
+ACK successful
+CMD_START_CAP ACK SUCCESS
+Set the arbitration domain baud rate: 1000000.0
+Set the data baud rate: 5000000.0
+Sampling point: 87.5%
+ACK successful
+CMD_SETUP_BUARD ACK SUCCESS
+Heart thread started
+USB receiving thread started
+totally inited  0 motors 
+**********Motor_Control init success**********
+
+Registered CAN frame handler for damiao
+Loaded motor 1 from damiao protocol
+Loaded motor 2 from damiao protocol
+Loaded motor 3 from damiao protocol
+Loaded motor 4 from damiao protocol
+Loaded motor 5 from damiao protocol
+Loaded motor 6 from damiao protocol
+Registered CAN frame handler for ht
+Loaded motor 7 from ht protocol
+Loaded motor 8 from ht protocol
+Registered CAN frame handler for servo
+Loaded motor 9 from servo protocol
+[11:47:11.615] [IC_ARM-INFO] ✓ 内部状态变量验证通过
+[11:47:11.615] [IC_ARM-INFO] Enabling all motors...
+[11:47:11.765] [IC_ARM-INFO] All motors enabled successfully
+[11:47:11.765] [IC_ARM-INFO] Waiting for motors to stabilize...
+
+Interrupt signal received. Exiting...

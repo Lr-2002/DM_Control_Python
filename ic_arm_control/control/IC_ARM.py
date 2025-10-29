@@ -38,7 +38,9 @@ from ic_arm_control.control.usb_hw_wrapper import USBHardwareWrapper
 from ic_arm_control.control.async_logger import AsyncLogManager
 from ic_arm_control.control.safety_monitor import SafetyMonitor
 from ic_arm_control.control.buffer_control_thread import BufferControlThread
-from ic_arm_control.control.optimized_buffer_control_thread import OptimizedBufferControlThread
+from ic_arm_control.control.optimized_buffer_control_thread import (
+    OptimizedBufferControlThread,
+)
 
 # 添加mlp_compensation和urdfly模块路径
 import sys
@@ -111,7 +113,7 @@ def validate_array(array: np.ndarray, expected_shape: Tuple, name: str) -> bool:
 class ICARM:
     def __init__(
         self,
-        device_sn="F561E08C892274DB09496BCC1102DBC5",
+        device_sn="693D3DE86DF5940C8BC74A5B46A3CE2E",
         debug=False,
         gc=False,
         gc_type="dyn",
@@ -128,7 +130,7 @@ class ICARM:
         self.use_optimized_buffer = use_optimized_buffer
         self.gc_type = gc_type  # 存储重力补偿类型
         debug_print("=== 初始化IC_ARM_Unified ===")
-        self.target_dt = 1/ control_freq
+        self.target_dt = 1 / control_freq
         # 初始化统一电机控制系统
         usb_hw = usb_class(1000000, 5000000, device_sn)
         usb_hw = USBHardwareWrapper(usb_hw)
@@ -348,7 +350,6 @@ class ICARM:
     # @pysnooper.snoop()
 
     def _read_all_states_from_feedback(self, enable_logging=True):
-
         motors = self.motor_manager.motors
         for i in range(self.motor_count):
             motor_id = i + 1
@@ -586,7 +587,6 @@ class ICARM:
         position_rad=0.0,
         velocity_rad_s=0.0,
         torque_nm=0.0,
-
     ):
         """Send command to a single motor using unified interface"""
         # print(" at send motor command ")
@@ -692,7 +692,8 @@ class ICARM:
             return self._original_set_joint_positions(
                 positions_rad, velocities_rad_s, torques_nm
             )
-    # @pysnooper.snoop() 
+
+    # @pysnooper.snoop()
     def _original_set_joint_positions(
         self, positions_rad, velocities_rad_s, torques_nm
     ):
@@ -767,7 +768,10 @@ class ICARM:
 
                 # 启动缓冲控制线程（如果启用且未运行）
                 if self.enable_buffered_control:
-                    if hasattr(self, 'buffer_control_thread') and self.buffer_control_thread:
+                    if (
+                        hasattr(self, "buffer_control_thread")
+                        and self.buffer_control_thread
+                    ):
                         if not self.buffer_control_thread.is_running():
                             success = self.buffer_control_thread.start()
                             if success:
@@ -820,22 +824,21 @@ class ICARM:
         return self.disable_all_motors()
 
     # ========== 缓冲控制管理方法 ==========
-    
 
     def enable_buffered_control_mode(self):
         """启用缓冲控制模式"""
         if not self.enable_buffered_control:
             debug_print("⚠️  缓冲控制未在初始化时启用")
             return False
-            
+
         if not self.buffer_control_thread:
             debug_print("❌ 缓冲控制线程未创建")
             return False
-            
+
         if self.buffer_control_thread.is_running():
             debug_print("✓ 缓冲控制模式已在运行")
             return True
-            
+
         success = self.buffer_control_thread.start()
         if success:
             debug_print("✅ 缓冲控制模式已启用")
@@ -2287,11 +2290,16 @@ class ICARM:
 
                 log_counter += 1
                 if i == 1000:
-                    print(time.strftime("%H:%M:%S"), '----------- start traj ---------------')
-                        
+                    print(
+                        time.strftime("%H:%M:%S"),
+                        "----------- start traj ---------------",
+                    )
 
                 if i == total_points - 1000:
-                    print( time.strftime("%H:%M:%S"), '----------- end traj ---------------')
+                    print(
+                        time.strftime("%H:%M:%S"),
+                        "----------- end traj ---------------",
+                    )
                 # 进度报告
                 if verbose and i % 1000 == 0:
                     progress = (i / total_points) * 100
@@ -2306,7 +2314,7 @@ class ICARM:
                     )
                 wait_t = self.target_dt - (time.time() - iter_time)
                 iter_time = time.time()
-                if wait_t >=0 : 
+                if wait_t >= 0:
                     # print('sleep for ', wait_t)
                     time.sleep(wait_t)
         except KeyboardInterrupt:

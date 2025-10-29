@@ -45,7 +45,7 @@ def convert_log_dir_to_dynamics(log_dir, output_file):
         command_df = command_df.iloc[:min_len]
 
         # Create dynamics data
-        dt = 0.002  # 500Hz
+        dt = 0.0025  # 100Hz
         dynamics_data = []
 
         for i in range(len(motor_df)):
@@ -96,29 +96,22 @@ def convert_log_dir_to_dynamics(log_dir, output_file):
 def main():
     """Main conversion function"""
     log_dirs = [
-        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_171020",
-        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_170759",
-        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_170840",
-        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_170933",
-        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_210525",
-        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_210408",
-        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_214524",
-        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_214427",
-        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_220012",
-        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250928_222206"
-        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_213928",
-        # ---- dynamic data
-        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_222653",
-        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_224318",
-        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_224845",
-        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_230035",
-        "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_225854",
-        # --- static data
-        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250930_161953_static",
-        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250930_162650_static",
+        # 新的动力学辨识数据
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20251011_131131_ic_arm_control",
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20251011_131249_ic_arm_control",
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20251011_131436_ic_arm_control"
+        # 之前的数据
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_222653",
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_224318",
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_224845",
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_230035",
+        # "/Users/lr-2002/project/instantcreation/IC_arm_control/logs/20250929_225854",
+        "/Users/lr-2002/project/instantcreation/ic_can/tools/execitation_trajectories/ic_can_log_20251015_145900_414",
+        "/Users/lr-2002/project/instantcreation/ic_can/tools/execitation_trajectories/ic_can_log_20251015_145946_130",
+        "/Users/lr-2002/project/instantcreation/ic_can/tools/execitation_trajectories/ic_can_log_20251015_150027_011",
     ]
 
-    output_dir = "/Users/lr-2002/project/instantcreation/IC_arm_control/dyn_ana"
+    output_dir = "/Users/lr-2002/project/instantcreation/IC_arm_control/dyn_ana_for_mat"
     os.makedirs(output_dir, exist_ok=True)
 
     converted_files = []
@@ -160,4 +153,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
