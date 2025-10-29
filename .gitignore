@@ -9,3 +9,9 @@ ic_arm_control.egg-info
 *.DS_Store
 logs
 .obsidian
+datasets
+dyn_ana
+control/urdfly
+ic_arm_control/control/gpt_di
+ic_arm_control/control/dynamics_identification
+ic_arm_control/control/urdfly
